@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><title>harness</title></head>
+<body>
+<canvas id="src-canvas" width="10" height="10"></canvas>
+<canvas id="chart-canvas" width="10" height="10"></canvas>
+<div id="harness-result">PENDING</div>
+
+<script src="../js/image-loader.js"></script>
+<script src="../js/quantize.js"></script>
+<script src="../js/kogin-render.js"></script>
+<script src="../js/sample.js"></script>
+<script>
+/* フルパイプラインのヘッドレス検証。app.jsのUI依存を避け、モジュールを直接叩く。 */
+(function () {
+  var result = document.getElementById('harness-result');
+  function done(obj) { result.textContent = 'RESULT:' + JSON.stringify(obj); }
+
+  try {
+    var srcCanvas = document.getElementById('src-canvas');
+    var chartCanvas = document.getElementById('chart-canvas');
+    var sampleUrl = KoginSample.makeSampleDataUrl(400);
+
+    KoginImageLoader.loadUrlToCanvas(sampleUrl, srcCanvas, 480).then(function (r) {
+      var checks = {};
+      checks.imageLoaded = r.width > 0 && r.height > 0 && !!r.imageData;
+
+      var dims = KoginQuantize.computeGridDims(r.width, r.height, 41);
+      checks.gridOdd = (dims.gridW % 2 === 1) && (dims.gridH % 2 === 1);
+
+      var ds = KoginQuantize.downsampleLuminance(r.imageData, dims.gridW, dims.gridH);
+      checks.lumLen = ds.lum.length === dims.gridW * dims.gridH;
+
+      var levels = KoginQuantize.quantize(ds.lum, {
+        levels: 3, contrast: 1.0, thresholdBias: 0, invert: false
+      });
+      // サンプルは中央菱形が暗い→刺しセルが存在するはず
+      var stitched = 0, maxLv = 0;
+      for (var i = 0; i < levels.length; i++) {
+        if (levels[i] > 0) stitched++;
+        if (levels[i] > maxLv) maxLv = levels[i];
+      }
+      checks.hasStitches = stitched > 0;
+      checks.usesMultiLevel = maxLv >= 1;
+
+      var info = KoginRender.render(chartCanvas, levels, dims.gridW, dims.gridH, {
+        numLevels: 3, style: 'dash', showGrid: true, cellW: 14
+      });
+      checks.chartSized = info.width > 100 && info.height > 100;
+      checks.canvasSized = chartCanvas.width === info.width;
+
+      // toDataURL が通る（tainted でない）＝書き出し可能
+      var dataUrl = chartCanvas.toDataURL('image/png');
+      checks.exportable = dataUrl.indexOf('data:image/png') === 0 && dataUrl.length > 1000;
+
+      // fillスタイルもレンダー可能か
+      var info2 = KoginRender.render(chartCanvas, levels, dims.gridW, dims.gridH, {
+        numLevels: 3, style: 'fill', showGrid: false, cellW: 14
+      });
+      checks.fillStyleOk = info2.width > 100;
+
+      var ok = Object.keys(checks).every(function (k) { return checks[k]; });
+      done({
+        ok: ok,
+        checks: checks,
+        gridW: dims.gridW, gridH: dims.gridH,
+        stitched: stitched, maxLevel: maxLv,
+        chartW: info.width, chartH: info.height,
+        dataUrlLen: dataUrl.length
+      });
+    }).catch(function (e) {
+      done({ ok: false, error: 'load: ' + e.message });
+    });
+  } catch (e) {
+    done({ ok: false, error: 'sync: ' + e.message });
+  }
+})();
+</script>
+</body>
+</html>

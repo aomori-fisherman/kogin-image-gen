@@ -1,0 +1,8 @@
+# OS / editor
+Thumbs.db
+.DS_Store
+*.swp
+
+# 生成物・一時
+*.log
+/tmp/

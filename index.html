@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>こぎん図案ジェネレータ — 画像/ロゴ → こぎん風チャート（MVP）</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-root">
+
+  <header class="app-header">
+    <h1>こぎん図案ジェネレータ
+      <span class="proto-tag">画像 → こぎん風チャート（MVP）</span>
+    </h1>
+    <div class="warn-banner">
+      ⚠ これは<strong>プロトタイプ（MVP）</strong>です。画像の輝度を格子刺し目に写像する
+      「それっぽい」変換であり、厳密なこぎん文法（モドコ・奇数目・裏渡り）の再現は v2 課題です。
+      完全クライアントサイド・決定論アルゴリズム／AI・サーバ・外部APIは使いません。
+    </div>
+  </header>
+
+  <main class="app-main">
+
+    <!-- 左: 入力・コントロール -->
+    <aside class="side side-left">
+
+      <section class="panel">
+        <h2>1. 画像を読み込む</h2>
+        <div id="dropzone" class="dropzone">
+          <p class="dz-text">ここに画像をドラッグ&ドロップ<br>または</p>
+          <label class="btn-primary file-btn">
+            ファイルを選択
+            <input type="file" id="file-input" accept="image/*" hidden>
+          </label>
+          <button id="btn-sample" class="btn-small">サンプル画像を使う</button>
+          <p class="hint">写真 / PNG / ロゴ想定。高コントラストほど図案が読みやすい。</p>
+        </div>
+        <canvas id="src-canvas" class="src-canvas" width="200" height="200"></canvas>
+      </section>
+
+      <section class="panel">
+        <h2>2. コントロール</h2>
+
+        <label class="ctl-row">
+          <span class="ctl-label">グリッド横（目数） <b id="gw-val">41</b></span>
+          <input type="range" id="grid-w" min="11" max="121" step="2" value="41">
+        </label>
+        <p class="hint">こぎんは奇数目が基調。横は奇数に丸めます。縦は比率から自動算出。</p>
+
+        <label class="ctl-row">
+          <span class="ctl-label">段数（明暗のレベル） <b id="lv-val">3</b></span>
+          <input type="range" id="levels" min="2" max="4" step="1" value="3">
+        </label>
+
+        <label class="ctl-row">
+          <span class="ctl-label">しきい値バイアス <b id="th-val">0</b></span>
+          <input type="range" id="threshold" min="-60" max="60" step="2" value="0">
+        </label>
+        <p class="hint">＋で暗部（刺し目）が増える、−で減る。</p>
+
+        <label class="ctl-row">
+          <span class="ctl-label">コントラスト <b id="ct-val">1.0</b></span>
+          <input type="range" id="contrast" min="0.5" max="2.5" step="0.1" value="1.0">
+        </label>
+
+        <label class="ctl-check">
+          <input type="checkbox" id="invert"> 明暗を反転（明るい所を刺す）
+        </label>
+
+        <label class="ctl-row">
+          <span class="ctl-label">刺し目スタイル</span>
+          <select id="stitch-style">
+            <option value="dash">横流れ刺し（長短のダッシュ）</option>
+            <option value="fill">升目の塗り（濃淡）</option>
+          </select>
+        </label>
+        <p class="hint">「横流れ刺し」がこぎんらしい水平の走り。「升目の塗り」はドット絵風。</p>
+      </section>
+
+      <section class="panel">
+        <h2>3. 書き出し</h2>
+        <button id="btn-export" class="btn-primary">チャートを PNG で保存</button>
+        <p class="hint">生成中のチャート画像をそのままダウンロードします。</p>
+      </section>
+    </aside>
+
+    <!-- 中央: プレビュー -->
+    <section class="center-col">
+      <div class="toolbar">
+        <span class="tb-label">こぎん風チャート プレビュー</span>
+        <span class="tb-grow"></span>
+        <label class="ctl-check inline">
+          <input type="checkbox" id="show-grid" checked> 格子線
+        </label>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="chart-canvas" class="chart-canvas" width="800" height="800"></canvas>
+      </div>
+      <p id="chart-info" class="hint chart-info">画像を読み込むとチャートを生成します。</p>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    こぎん図案ジェネレータ（MVP・2026-07-14）
+    ／ 完全クライアントサイド・決定論／ 無償ハート版とは別プロダクト（伎海の課金導線）
+    ／ 実装・v2アイデア: README.md
+  </footer>
+</div>
+
+<script src="js/image-loader.js"></script>
+<script src="js/quantize.js"></script>
+<script src="js/kogin-render.js"></script>
+<script src="js/sample.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
