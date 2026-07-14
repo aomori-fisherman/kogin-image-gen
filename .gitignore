@@ -6,3 +6,5 @@ Thumbs.db
 # 生成物・一時
 *.log
 /tmp/
+
+.vercel
