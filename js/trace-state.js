@@ -40,6 +40,12 @@
   }
   function cloneGrid(g) { return { w: g.w, h: g.h, cellAspect: g.cellAspect }; }
   function cloneUnderlay(u) { return u ? JSON.parse(JSON.stringify(u)) : null; }
+  // breaks = { "y": [x, ...] }（疎オーバーレイ）。x は「x-1 と x の間の切れ目」＝強制ラン開始の左端。
+  function cloneBreaks(b) {
+    var out = {};
+    if (b) for (var k in b) if (Object.prototype.hasOwnProperty.call(b, k) && b[k] && b[k].length) out[k] = b[k].slice();
+    return out;
+  }
   function cloneDoc(d) {
     return {
       version: d.version,
@@ -47,7 +53,8 @@
       grid: cloneGrid(d.grid),
       fabricId: d.fabricId,
       cells: cloneCells(d.cells),
-      underlay: cloneUnderlay(d.underlay)
+      underlay: cloneUnderlay(d.underlay),
+      breaks: cloneBreaks(d.breaks)
     };
   }
   function nowIso() {
@@ -69,8 +76,58 @@
       grid: { w: w, h: h, cellAspect: cellAspect },
       fabricId: fabricId,
       cells: emptyCells(w, h),
-      underlay: null
+      underlay: null,
+      breaks: {}
     };
+  }
+
+  // --- break（切れ目）ヘルパ -------------------------------------------------
+  // breaksRow を高速判定用の集合（{x:1}）へ。無ければ null。3導出関数が共有。
+  function brkSet(breaksRow) {
+    if (!breaksRow || !breaksRow.length) return null;
+    var s = {}; for (var i = 0; i < breaksRow.length; i++) s[breaksRow[i]] = 1; return s;
+  }
+  function breaksRowOf(breaks, y) { var a = breaks && breaks[y]; return (a && a.length) ? a : null; }
+  function hasBreakAt(breaks, y, x) { var a = breaks && breaks[y]; return !!(a && a.indexOf(x) >= 0); }
+  function addBreak(breaks, y, x) {
+    if (x < 1) return false;                       // x=0（行頭）には切れ目を置けない
+    var a = breaks[y] || (breaks[y] = []);
+    if (a.indexOf(x) >= 0) return false;
+    a.push(x); a.sort(function (p, q) { return p - q; });
+    return true;
+  }
+  function removeBreak(breaks, y, x) {
+    var a = breaks[y]; if (!a) return false;
+    var i = a.indexOf(x); if (i < 0) return false;
+    a.splice(i, 1); if (!a.length) delete breaks[y];
+    return true;
+  }
+  function toggleBreak(breaks, y, x) {
+    if (hasBreakAt(breaks, y, x)) { removeBreak(breaks, y, x); return false; }
+    addBreak(breaks, y, x); return true;
+  }
+  // 簡易掃除: 行 y の切れ目のうち、両隣どちらかが null（＝分割対象の渡りが無い）や
+  // 枠外の x を削除する。セル消去・移動・寸法変更後に呼ぶ。
+  function cleanBreaksRow(cells, breaks, y) {
+    var a = breaks[y]; if (!a) return;
+    var row = cells[y]; if (!row) { delete breaks[y]; return; }
+    var w = row.length, kept = [];
+    for (var i = 0; i < a.length; i++) {
+      var x = a[i];
+      if (x >= 1 && x <= w - 1 && row[x - 1] != null && row[x] != null) kept.push(x);
+    }
+    if (kept.length) breaks[y] = kept; else delete breaks[y];
+  }
+  // 寸法変更で範囲外になった切れ目を落とす（左上基準・行キーと x を new 範囲に丸める）。
+  function clampBreaks(breaks, w, h) {
+    var out = {};
+    if (breaks) for (var k in breaks) if (Object.prototype.hasOwnProperty.call(breaks, k)) {
+      var y = +k; if (y < 0 || y >= h) continue;
+      var a = breaks[k], keep = [];
+      for (var i = 0; i < a.length; i++) { var x = a[i]; if (x >= 1 && x <= w - 1) keep.push(x); }
+      if (keep.length) out[k] = keep;
+    }
+    return out;
   }
 
   // 左上基準でセルを保持しつつ寸法変更。落ちた非nullセル数を dropped で返す。
@@ -93,6 +150,9 @@
     var nd = cloneDoc(doc);
     nd.grid = { w: w, h: h, cellAspect: doc.grid.cellAspect };
     nd.cells = next;
+    nd.breaks = clampBreaks(doc.breaks, w, h);
+    // 縮小で片側が null になった切れ目も掃除
+    for (var cy in nd.breaks) if (Object.prototype.hasOwnProperty.call(nd.breaks, cy)) cleanBreaksRow(nd.cells, nd.breaks, +cy);
     return { doc: nd, dropped: dropped };
   }
 
@@ -106,13 +166,15 @@
     for (var x = lo; x <= hi; x++) cells[y][x] = colorId;
   }
 
-  function eraseRange(cells, y, x1, x2) {
+  // breaks を渡すと、消去で片側が null になった切れ目を同時に掃除する（後方互換: 省略時は cells のみ）。
+  function eraseRange(cells, y, x1, x2, breaks) {
     if (y < 0 || y >= cells.length) return;
     var w = cells[y].length;
     var lo = Math.min(x1, x2), hi = Math.max(x1, x2);
     if (lo < 0) lo = 0;
     if (hi > w - 1) hi = w - 1;
     for (var x = lo; x <= hi; x++) cells[y][x] = null;
+    if (breaks) cleanBreaksRow(cells, breaks, y);
   }
 
   // 長さ偶数のとき dir 方向へ1目伸ばす。枠外 or 長さ>floatMax なら1目縮める。奇数はそのまま。
@@ -141,21 +203,24 @@
   }
 
   // (x,y) を含む同色連続ラン。null なら null を返す。
-  function runAt(cells, x, y) {
+  // breaksRow を渡すと、切れ目エッジでもランを切る（後方互換: 省略時は色/null のみで切る）。
+  function runAt(cells, x, y, breaksRow) {
     if (y < 0 || y >= cells.length) return null;
     var row = cells[y];
     if (x < 0 || x >= row.length) return null;
     var colorId = row[x];
     if (colorId == null) return null;
+    var brk = brkSet(breaksRow);
     var start = x;
-    while (start - 1 >= 0 && row[start - 1] === colorId) start--;
+    while (start - 1 >= 0 && row[start - 1] === colorId && !(brk && brk[start])) start--;
     var end = x;
-    while (end + 1 < row.length && row[end + 1] === colorId) end++;
+    while (end + 1 < row.length && row[end + 1] === colorId && !(brk && brk[end + 1])) end++;
     return { y: y, start: start, len: end - start + 1, colorId: colorId };
   }
 
   // ラン全体を dx,dy 平行移動。はみ出す移動は拒否（無変化）。
-  function moveRun(cells, run, dx, dy) {
+  // breaks を渡すと移動後に旧行/新行の切れ目を掃除（切れ目は移動に引き継がない＝簡易規則）。
+  function moveRun(cells, run, dx, dy, breaks) {
     var ny = run.y + dy;
     var nStart = run.start + dx;
     var nEnd = nStart + run.len - 1;
@@ -164,6 +229,7 @@
     // 旧区間クリア → 新区間書込（同一行の重なりでも順序上正しく残る）
     for (var x = run.start; x < run.start + run.len; x++) cells[run.y][x] = null;
     for (var nx = nStart; nx <= nEnd; nx++) cells[ny][nx] = run.colorId;
+    if (breaks) { cleanBreaksRow(cells, breaks, run.y); if (ny !== run.y) cleanBreaksRow(cells, breaks, ny); }
   }
 
   // ラン端の伸縮。edge='L'|'R'、delta=±1。長さ1未満になる縮小は無視。枠外への伸長は無視。
@@ -233,6 +299,7 @@
     if (!obj.grid || !Array.isArray(obj.cells)) throw new Error('grid/cells がありません');
     if (obj.underlay === undefined) obj.underlay = null;
     if (!obj.fabricId) obj.fabricId = (CFG.FABRICS && CFG.FABRICS[0]) ? CFG.FABRICS[0].id : 'navy';
+    if (!obj.breaks || typeof obj.breaks !== 'object') obj.breaks = {};  // 後方互換: 無ければ空
     return obj;
   }
 
@@ -245,8 +312,8 @@
     var baseline = snap(cur);       // 直近コミット時点のスナップショット
     var depth = CFG.undoDepth || 50;
 
-    function snap(d) { return { grid: cloneGrid(d.grid), cells: cloneCells(d.cells) }; }
-    function apply(s) { cur.grid = cloneGrid(s.grid); cur.cells = cloneCells(s.cells); }
+    function snap(d) { return { grid: cloneGrid(d.grid), cells: cloneCells(d.cells), breaks: cloneBreaks(d.breaks) }; }
+    function apply(s) { cur.grid = cloneGrid(s.grid); cur.cells = cloneCells(s.cells); cur.breaks = cloneBreaks(s.breaks); }
 
     return {
       commit: function (/* label */) {
@@ -295,9 +362,19 @@
     serialize: serialize,
     deserialize: deserialize,
     DocStore: DocStore,
+    // break（切れ目）API
+    addBreak: addBreak,
+    removeBreak: removeBreak,
+    toggleBreak: toggleBreak,
+    hasBreakAt: hasBreakAt,
+    breaksRowOf: breaksRowOf,
+    cleanBreaksRow: cleanBreaksRow,
+    clampBreaks: clampBreaks,
     // 補助（app/render 用）
     cloneDoc: cloneDoc,
-    cloneCells: cloneCells
+    cloneCells: cloneCells,
+    cloneBreaks: cloneBreaks,
+    emptyCells: emptyCells
   };
 
   if (typeof module !== 'undefined' && module.exports) { module.exports = api; }

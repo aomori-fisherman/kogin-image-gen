@@ -23,14 +23,22 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // 1行から多色ランを抽出（render 内で完結・validate 非依存）
-  function rowRuns(row) {
+  function brkSet(breaksRow) {
+    if (!breaksRow || !breaksRow.length) return null;
+    var s = {}; for (var i = 0; i < breaksRow.length; i++) s[breaksRow[i]] = 1; return s;
+  }
+
+  // 1行から多色ランを抽出（render 内で完結・validate 非依存）。
+  // breaksRow を渡すと切れ目でランを分割し、バーを分けて描く。
+  function rowRuns(row, breaksRow) {
+    var brk = brkSet(breaksRow);
     var runs = [], x = 0, n = row.length;
     while (x < n) {
       var c = row[x];
       if (c == null) { x++; continue; }
       var s = x;
-      while (x < n && row[x] === c) x++;
+      x++;
+      while (x < n && row[x] === c && !(brk && brk[x])) x++;
       runs.push({ start: s, len: x - s, colorId: c });
     }
     return runs;
@@ -108,11 +116,13 @@
       out.push('<text x="' + (PAD - 6) + '" y="' + (PAD + ly * ch + 3) + '" font-size="9" text-anchor="end" fill="' + lblCol + '">' + ly + '</text>');
     }
 
-    // cells（ラン=横バー）
+    // cells（ラン=横バー）。切れ目がある行は rowRuns がバーを分割する。
+    var breaks = doc.breaks || null;
     var inset = Math.min(cw * 0.14, 2.5);
     var barH = Math.max(2, ch * 0.62);
     for (var y = 0; y < h; y++) {
-      var runs = rowRuns(doc.cells[y]);
+      var brow = breaks ? breaks[y] : null;
+      var runs = rowRuns(doc.cells[y], brow);
       for (var r = 0; r < runs.length; r++) {
         var run = runs[r];
         var pcol = lookup(palette, run.colorId);
@@ -123,6 +133,23 @@
         var rx = Math.min(barH / 2, cw / 2);
         out.push('<rect x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + barH.toFixed(1) +
           '" rx="' + rx.toFixed(1) + '" fill="' + fill + '"/>');
+      }
+    }
+
+    // 切れ目マーカー（同色ランを分ける明示的な仕切り。セル境界に短い縦線）
+    if (breaks) {
+      for (var byk in breaks) if (Object.prototype.hasOwnProperty.call(breaks, byk)) {
+        var yy = +byk; if (yy < 0 || yy >= h) continue;
+        var bxs = breaks[byk];
+        for (var bi = 0; bi < bxs.length; bi++) {
+          var xEdge = bxs[bi]; if (xEdge < 1 || xEdge > w - 1) continue;
+          var lineX = PAD + xEdge * cw;
+          var y0 = PAD + yy * ch + ch * 0.12, y1 = PAD + (yy + 1) * ch - ch * 0.12;
+          out.push('<line x1="' + lineX.toFixed(1) + '" y1="' + y0.toFixed(1) + '" x2="' + lineX.toFixed(1) + '" y2="' + y1.toFixed(1) +
+            '" stroke="#0E1116" stroke-width="3" stroke-linecap="round"/>');
+          out.push('<line x1="' + lineX.toFixed(1) + '" y1="' + y0.toFixed(1) + '" x2="' + lineX.toFixed(1) + '" y2="' + y1.toFixed(1) +
+            '" stroke="#E3A93D" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="2 2"/>');
+        }
       }
     }
 

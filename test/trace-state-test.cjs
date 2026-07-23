@@ -169,5 +169,103 @@ function deepEqual(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
   assert(d2.cells[0][1] === 'b01', 'resizeRun R+1 extends');
 })();
 
+// 9. break（切れ目）ヘルパ: add/remove/toggle/hasBreakAt・x=0拒否・sort・空キー削除
+(() => {
+  const d = S.newDoc(10, 3);
+  assert(d.breaks && Object.keys(d.breaks).length === 0, 'newDoc has empty breaks {}');
+  assert(S.addBreak(d.breaks, 1, 4) === true, 'addBreak returns true (new)');
+  assert(S.addBreak(d.breaks, 1, 4) === false, 'addBreak dup returns false');
+  assert(S.hasBreakAt(d.breaks, 1, 4) === true, 'hasBreakAt true');
+  assert(S.addBreak(d.breaks, 1, 0) === false, 'addBreak x=0 rejected (row head)');
+  S.addBreak(d.breaks, 1, 2);
+  assert(eq(d.breaks[1], [2, 4]), 'breaks kept sorted [2,4]');
+  assert(S.toggleBreak(d.breaks, 1, 4) === false, 'toggle existing -> off (false)');
+  assert(eq(d.breaks[1], [2]), 'after toggle-off only [2]');
+  assert(S.toggleBreak(d.breaks, 1, 6) === true, 'toggle new -> on (true)');
+  S.removeBreak(d.breaks, 1, 2); S.removeBreak(d.breaks, 1, 6);
+  assert(d.breaks[1] === undefined, 'empty row key deleted');
+})();
+
+// 10. runAt with breaksRow: 切れ目で同色ランを分割して選択
+(() => {
+  const d = S.newDoc(10, 1);
+  S.paintRun(d.cells, 0, 0, 7, 'r01'); // len8 同色
+  const whole = S.runAt(d.cells, 5, 0);
+  assert(whole.start === 0 && whole.len === 8, 'runAt no-break: whole len8');
+  // 切れ目 x=4 → x=5 を含むランは [4,7]
+  const right = S.runAt(d.cells, 5, 0, [4]);
+  assert(right.start === 4 && right.len === 4, 'runAt with break: right run [4,4] (' + JSON.stringify(right) + ')');
+  const left = S.runAt(d.cells, 2, 0, [4]);
+  assert(left.start === 0 && left.len === 4, 'runAt with break: left run [0,4]');
+})();
+
+// 11. eraseRange が片側nullになった切れ目を掃除
+(() => {
+  const d = S.newDoc(10, 1);
+  S.paintRun(d.cells, 0, 0, 7, 'r01');
+  S.addBreak(d.breaks, 0, 4);
+  assert(S.hasBreakAt(d.breaks, 0, 4), 'break set at 4');
+  // x=4 を消す → 切れ目(3↔4)の右側が null → 掃除される
+  S.eraseRange(d.cells, 0, 4, 4, d.breaks);
+  assert(!S.hasBreakAt(d.breaks, 0, 4), 'break at 4 cleaned after erasing cell 4');
+  // breaks を渡さなければ掃除しない（後方互換）
+  const d2 = S.newDoc(10, 1);
+  S.paintRun(d2.cells, 0, 0, 7, 'r01'); S.addBreak(d2.breaks, 0, 4);
+  S.eraseRange(d2.cells, 0, 4, 4); // breaks省略
+  assert(S.hasBreakAt(d2.breaks, 0, 4), 'break kept when breaks arg omitted (back-compat)');
+})();
+
+// 12. moveRun は切れ目を引き継がない（旧行を掃除）
+(() => {
+  const d = S.newDoc(12, 2);
+  S.paintRun(d.cells, 0, 0, 3, 'r01'); // len4 run at row0
+  S.addBreak(d.breaks, 0, 2);          // 切れ目を行0に
+  // ラン全体([0,3])を行1へ移動（切れ目は引き継がない）
+  S.moveRun(d.cells, { y: 0, start: 0, len: 4, colorId: 'r01' }, 0, 1, d.breaks);
+  assert(d.cells[1][0] === 'r01' && d.cells[0][0] === null, 'run moved to row1');
+  assert(!S.hasBreakAt(d.breaks, 0, 2), 'old-row break cleaned (row0 now null)');
+  assert(!S.hasBreakAt(d.breaks, 1, 2), 'break not carried to new row');
+})();
+
+// 13. serialize/deserialize roundtrip が breaks を保持
+(() => {
+  const d = S.newDoc(8, 3);
+  S.paintRun(d.cells, 1, 0, 7, 'r01');
+  S.addBreak(d.breaks, 1, 4);
+  const round = S.deserialize(S.serialize(d));
+  assert(deepEqual(round, d), 'serialize roundtrip deep-equal (with breaks)');
+  assert(eq(round.breaks[1], [4]), 'breaks survived roundtrip');
+  // 後方互換: breaks欠落JSON → 空 {}
+  const legacy = S.deserialize(JSON.stringify({ version: 1, grid: { w: 5, h: 2, cellAspect: 1 }, fabricId: 'navy', cells: [[null, null, null, null, null], [null, null, null, null, null]] }));
+  assert(legacy.breaks && Object.keys(legacy.breaks).length === 0, 'legacy doc w/o breaks -> {}');
+})();
+
+// 14. DocStore undo/redo が breaks を復元
+(() => {
+  const d0 = S.newDoc(10, 1);
+  S.paintRun(d0.cells, 0, 0, 7, 'r01');
+  const store = S.DocStore(d0);
+  store.commit('paint');
+  // 切れ目を打つ → コミット
+  S.addBreak(store.current().breaks, 0, 4);
+  store.commit('break');
+  assert(S.hasBreakAt(store.current().breaks, 0, 4), 'break present after commit');
+  store.undo();
+  assert(!S.hasBreakAt(store.current().breaks, 0, 4), 'undo removes break');
+  store.redo();
+  assert(S.hasBreakAt(store.current().breaks, 0, 4), 'redo restores break');
+})();
+
+// 15. resizeGrid が範囲外・片側nullの切れ目を落とす
+(() => {
+  const d = S.newDoc(10, 3);
+  S.paintRun(d.cells, 0, 0, 9, 'r01');
+  S.addBreak(d.breaks, 0, 4);  // 範囲内で有効
+  S.addBreak(d.breaks, 0, 8);  // 縮小で範囲外になる
+  const shr = S.resizeGrid(d, 6, 2); // w=6 → x=8 は無効、かつ x=4 は両隣有効
+  assert(S.hasBreakAt(shr.doc.breaks, 0, 4), 'in-bounds break kept after resize');
+  assert(!S.hasBreakAt(shr.doc.breaks, 0, 8), 'out-of-bounds break dropped');
+})();
+
 console.log('\ntrace-state-test: ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

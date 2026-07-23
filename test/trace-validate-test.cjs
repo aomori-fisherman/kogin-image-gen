@@ -57,5 +57,42 @@ function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
   assert(a.cellCount === 6, 'cellCount 6');
 })();
 
+// 11. break（切れ目）分割: extractRunsMulti が切れ目エッジでも同色ランを切る
+(() => {
+  const row8 = new Array(8).fill('r01');
+  // 切れ目なし → 1本 len8
+  const noBrk = V.extractRunsMulti(row8);
+  assert(noBrk.length === 1 && noBrk[0].len === 8, 'no-break: single len8 run');
+  // 切れ目 x=4（3↔4 の間） → 4+4 の2本
+  const withBrk = V.extractRunsMulti(row8, [4]);
+  assert(eq(withBrk, [
+    { colorId: 'r01', start: 0, len: 4 },
+    { colorId: 'r01', start: 4, len: 4 }
+  ]), 'break at 4 splits 8 into 4+4 (' + JSON.stringify(withBrk) + ')');
+  // 複数切れ目 x=[2,4] → 2+2+4
+  const multi = V.extractRunsMulti(row8, [2, 4]);
+  assert(eq(multi.map(r => r.len), [2, 2, 4]), 'breaks [2,4] -> 2+2+4');
+  // 空/未指定 breaksRow は従来通り
+  assert(V.extractRunsMulti(row8, []).length === 1, 'empty break array = no split');
+})();
+
+// 12. analyze with breaks: 8目同色ラン＋breakで4+4→ float違反(>7)が解消
+(() => {
+  const row8 = new Array(8).fill('r01');
+  const before = V.analyze([row8], { floatMax: 7 });
+  assert(before.floatViolations.length === 1, 'len8 without break -> 1 float violation');
+  assert(before.runCount === 1 && before.maxRunLen === 8, 'len8 single run, maxRun 8');
+  // breaks: 行0 の x=4 に切れ目
+  const after = V.analyze([row8], { floatMax: 7, breaks: { 0: [4] } });
+  assert(after.floatViolations.length === 0, 'len8 with break at 4 -> 0 violation (producible)');
+  assert(after.runCount === 2, 'break splits into 2 runs');
+  assert(after.maxRunLen === 4, 'maxRunLen now 4');
+  assert(after.cellCount === 8, 'cellCount unchanged 8');
+  assert(after.perColor['r01'] === 8, 'perColor total unchanged');
+  // 集計は色境界と切れ目の両方で切る（多色＋break）
+  const mixed = V.analyze([['r01', 'r01', 'r01', 'r01', 'w01', 'w01']], { floatMax: 7, breaks: { 0: [2] } });
+  assert(mixed.runCount === 3, 'color-change + break -> 3 runs (' + mixed.runCount + ')');
+})();
+
 console.log('\ntrace-validate-test: ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
