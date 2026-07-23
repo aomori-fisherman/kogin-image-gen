@@ -1,0 +1,125 @@
+/* editor.css — こぎんトレース台エディタ T0 専用スタイル（style.css は触らない・独立）。
+   デスクトップ優先（最低幅1000px想定）。ダーク基調は index 版の美観を独立再現。 */
+
+:root {
+  --bg: #14181d;
+  --panel: #1c222a;
+  --panel-2: #232b35;
+  --line: #313b47;
+  --text: #e6ebf0;
+  --text-dim: #9aa7b4;
+  --accent: #4fb0c6;
+  --warn: #E3C24A;
+  --danger: #E23B3B;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 13px; line-height: 1.5;
+}
+
+.ed-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.ed-header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+.ed-tag { font-size: 10px; background: var(--accent); color: #06232b; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
+.ed-header .spacer { flex: 1; }
+.ed-note { font-size: 11px; color: var(--text-dim); }
+
+.ed-root {
+  display: grid;
+  grid-template-columns: 230px 1fr 330px;
+  gap: 10px; padding: 10px;
+  min-width: 1000px;
+  align-items: start;
+}
+
+/* ---- パネル共通 ---- */
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.panel h2 { font-size: 12px; margin: 0 0 8px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 5px; }
+.hint { font-size: 10.5px; color: var(--text-dim); margin: 5px 0 0; }
+.row { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+.row > label { font-size: 11px; color: var(--text-dim); }
+label.block { display: block; margin: 8px 0 2px; }
+.lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+.lbl b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+input[type=number] { width: 68px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font-size: 12px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; font-size: 12px; }
+.check { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 5px 0; cursor: pointer; }
+.check input { accent-color: var(--accent); }
+
+/* ---- ボタン ---- */
+.btn-primary { background: var(--accent); color: #06232b; border: none; border-radius: 7px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-small { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+.btn-small:hover { border-color: var(--accent); }
+
+/* ---- 左：ツール ---- */
+.tool-list { display: flex; flex-direction: column; gap: 5px; }
+.tool-btn { display: flex; align-items: center; gap: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer; text-align: left; }
+.tool-btn .k { margin-left: auto; font-size: 10px; color: var(--text-dim); }
+.tool-btn:hover { border-color: var(--accent); }
+.tool-btn.active { background: var(--accent); color: #06232b; border-color: var(--accent); font-weight: 700; }
+.tool-btn.active .k { color: #06232b; }
+
+.palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-top: 6px; }
+.sw { aspect-ratio: 1; border-radius: 6px; border: 2px solid var(--line); cursor: pointer; }
+.sw.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,176,198,.5); }
+.active-color { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+.active-color b { color: var(--text); }
+
+.undo-row { display: flex; gap: 6px; margin-top: 8px; }
+.undo-row button { flex: 1; }
+
+/* ---- 中央：キャンバス ---- */
+.canvas-col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.canvas-toolbar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
+.canvas-toolbar .spacer { flex: 1; }
+.canvas-wrap { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 8px; background: #0e1116; }
+#trace-svg { display: block; touch-action: none; cursor: crosshair; }
+.canvas-status { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+
+/* ---- 検証パネル ---- */
+.stat { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+.stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
+.badge.ok { background: #1e3a2a; color: #7fd6a0; }
+.badge.bad { background: #3a1e1e; color: #ff9a9a; }
+.badge.warn { background: #3a331e; color: #e7cf7a; }
+.percolor { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.percolor .chip { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
+.percolor .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; border: 1px solid #0006; }
+
+/* ---- 下絵ドロップ ---- */
+.dropzone { border: 1.5px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; font-size: 11px; color: var(--text-dim); }
+.dropzone.dragover { border-color: var(--accent); background: var(--panel-2); }
+.file-btn { cursor: pointer; }
+.file-btn input { display: none; }
+
+/* ---- 連続ペースト フォーム ---- */
+.repeat-form { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 8px; background: var(--panel-2); }
+.repeat-form.hidden { display: none; }
+
+/* ---- チャートオーバーレイ ---- */
+#trace-chart-overlay { display: none; position: fixed; inset: 0; background: rgba(10,12,16,.94); z-index: 50; overflow: auto; padding: 16px; }
+.tco-bar { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
+.tco-sheet { background: #fff; margin: 0 auto; max-width: 1000px; padding: 12px; border-radius: 6px; }
+.tco-sheet svg { width: 100%; height: auto; display: block; }
+
+.hidden { display: none; }
+
+@media print {
+  .ed-header, .ed-root { display: none !important; }
+  #trace-chart-overlay { position: static; background: #fff; padding: 0; display: block !important; }
+  .tco-bar { display: none !important; }
+  .tco-sheet { box-shadow: none; max-width: 100%; padding: 0; }
+  .tco-sheet svg { width: auto; height: auto; max-width: 100%; max-height: 265mm; }
+  @page { size: A4 portrait; margin: 10mm; }
+}

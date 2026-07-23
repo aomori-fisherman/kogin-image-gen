@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><title>trace-harness</title>
+<style>#trace-svg{display:block}</style>
+</head>
+<body>
+<!-- app は $() を null ガードするので、必須は svg のみ -->
+<svg id="trace-svg" width="100" height="100" viewBox="0 0 100 100"></svg>
+<div id="chart-sink"></div>
+<div id="trace-harness-result">PENDING</div>
+
+<script>window.__initErr = null; window.addEventListener('error', function (ev) { if (!window.__initErr) window.__initErr = (ev.message || '') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''); });</script>
+<script src="../js/image-loader.js"></script>
+<script src="../js/sample.js"></script>
+<script src="../js/trace-config.js"></script>
+<script src="../js/trace-state.js"></script>
+<script src="../js/trace-validate.js"></script>
+<script src="../js/trace-render.js"></script>
+<script src="../js/trace-chart.js"></script>
+<script src="../js/trace-app.js"></script>
+<script>
+/* §8 ヘッドレスUI検証。実アプリ(TraceApp)を MouseEvent 合成＋公開APIで駆動する。
+   app 初期化は DOMContentLoaded 後なので、load 後に実行する。 */
+function runHarness() {
+  var out = document.getElementById('trace-harness-result');
+  function done(o) { out.textContent = 'RESULT:' + JSON.stringify(o); }
+
+  function md(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); TraceApp.svg().dispatchEvent(new MouseEvent('mousedown', { clientX: p.clientX, clientY: p.clientY, bubbles: true, cancelable: true })); }
+  function mm(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mousemove', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
+  function mu(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mouseup', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
+
+  try {
+    if (typeof TraceApp === 'undefined') { done({ ok: false, error: 'TraceApp 未定義（初期化失敗）', initErr: window.__initErr }); return; }
+    var checks = {};
+
+    // 1. 21×16（偶数H）で初期化
+    TraceApp.reset(21, 16);
+    checks.initEvenH = TraceApp.getDoc().grid.h === 16 && TraceApp.getDoc().grid.w === 21;
+
+    // 2. ペンドラッグ 行3・8セル（x=2..9）・スナップOFF
+    TraceApp.setTool('pen'); TraceApp.setOddSnap(false); TraceApp.setActiveColor('r01');
+    md(2, 3); mm(9, 3); mu(9, 3);
+    checks.penCells8 = TraceApp.cellCount() === 8;
+    checks.penFloat1 = TraceApp.getVr().floatViolations.length === 1;
+
+    // 3. チャートボタン disabled
+    checks.chartDisabledWhenViolation = TraceApp.chartDisabled() === true;
+
+    // 4. undo → cells 0
+    TraceApp.undo();
+    checks.undoToZero = TraceApp.cellCount() === 0;
+
+    // 5. 斜線 5セル（(0,0)→(4,4)）
+    TraceApp.setTool('diag');
+    md(0, 0); mm(4, 4); mu(4, 4);
+    checks.diag5 = TraceApp.cellCount() === 5;
+
+    // 6. 範囲選択 2×3 コピー（(0,0)-(1,2)）— 対角の (0,0),(1,1) を含む＝非null 2
+    TraceApp.setRect(0, 0, 2, 3);
+    var clip = TraceApp.copyRect();
+    var clipNonNull = 0;
+    for (var y = 0; y < clip.h; y++) for (var x = 0; x < clip.w; x++) if (clip.cells[y][x] != null) clipNonNull++;
+    checks.clipShape = clip.w === 2 && clip.h === 3;
+    checks.clipNonNull2 = clipNonNull === 2;
+
+    // 7. 連続ペースト 2×2 gap1 → written 数式一致
+    var nx = 2, ny = 2, gapX = 1, gapY = 1;
+    var written = TraceApp.repeatPasteAt(6, 6, nx, ny, gapX, gapY);
+    // 全配置がグリッド内（21×16）＝ written = clipNonNull * nx * ny
+    checks.writtenFormula = written === clipNonNull * nx * ny;
+    checks.written8 = written === 8;
+
+    // 違反なし状態（斜線5＋ペースト8＝13・すべて短ラン）
+    checks.cells13 = TraceApp.cellCount() === 13;
+    checks.noViolation = TraceApp.getVr().floatViolations.length === 0;
+    checks.chartEnabled = TraceApp.chartDisabled() === false;
+
+    // 8. チャート open → 凡例・記号セル存在
+    var built = TraceApp.openChart();
+    var sink = document.getElementById('chart-sink');
+    sink.innerHTML = built.svgString;
+    var symCells = sink.querySelectorAll('.chart-symbol').length;
+    var legendRows = sink.querySelectorAll('.legend-row').length;
+    checks.chartSymbolsExist = symCells === 13 && built.symbolCellCount === 13;
+    checks.legendExists = legendRows >= 1 && built.usedColors.length >= 1;
+
+    // 9. serialize roundtrip
+    var str = TraceApp.serialize();
+    var d = window.TraceState.deserialize(str);
+    var rtCells = 0;
+    for (var yy = 0; yy < d.cells.length; yy++) for (var xx = 0; xx < d.cells[yy].length; xx++) if (d.cells[yy][xx] != null) rtCells++;
+    checks.roundtrip = d.version === 1 && d.grid.w === 21 && d.grid.h === 16 && rtCells === 13;
+    TraceApp.load(str);
+    checks.reloadCells13 = TraceApp.cellCount() === 13;
+
+    var ok = Object.keys(checks).every(function (k) { return checks[k]; });
+    done({ ok: ok, checks: checks, written: written, clipNonNull: clipNonNull, symCells: symCells, legendRows: legendRows });
+  } catch (e) {
+    done({ ok: false, error: (e && e.message) || String(e), stack: (e && e.stack) || '' });
+  }
+}
+if (document.readyState === 'complete') runHarness();
+else window.addEventListener('load', runHarness);
+</script>
+</body>
+</html>

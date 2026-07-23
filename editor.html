@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>こぎんトレース台エディタ（T0・仮）</title>
+<link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+
+<header class="ed-header">
+  <h1>こぎんトレース台エディタ</h1>
+  <span class="ed-tag">T0・仮値</span>
+  <span class="ed-note">グリッド紙をデジタルで。糸色・寸法・記法は<strong>すべて仮</strong>（実測後に差し替え）。</span>
+  <span class="spacer"></span>
+  <span class="ed-note" id="autosave-status">—</span>
+</header>
+
+<div class="ed-root">
+
+  <!-- 左：ツール・パレット -->
+  <aside class="ed-left">
+    <section class="panel">
+      <h2>ツール</h2>
+      <div class="tool-list">
+        <button class="tool-btn" id="tool-pen" data-tool="pen">ペン（塗り）<span class="k">1</span></button>
+        <button class="tool-btn" id="tool-diag" data-tool="diag">斜線（補助）<span class="k">2</span></button>
+        <button class="tool-btn" id="tool-eraser" data-tool="eraser">消しゴム<span class="k">3</span></button>
+        <button class="tool-btn" id="tool-select" data-tool="select">選択（ラン）<span class="k">4</span></button>
+        <button class="tool-btn" id="tool-rect" data-tool="rect">範囲選択<span class="k">5</span></button>
+        <button class="tool-btn" id="tool-underlay" data-tool="underlay">下絵移動<span class="k">6</span></button>
+      </div>
+      <label class="check"><input type="checkbox" id="chk-oddsnap"> 奇数スナップ（既定OFF・警告のみ）</label>
+      <div class="undo-row">
+        <button class="btn-small" id="btn-undo">↶ 取消 (Ctrl+Z)</button>
+        <button class="btn-small" id="btn-redo">↷ やり直し</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>糸色（仮）</h2>
+      <div class="palette" id="palette"></div>
+      <div class="active-color" id="active-color">—</div>
+      <label class="block lbl">布地（仮）</label>
+      <select id="fabric-select"></select>
+    </section>
+  </aside>
+
+  <!-- 中央：キャンバス -->
+  <main class="canvas-col">
+    <div class="canvas-toolbar">
+      <span>ツール: <b id="cur-tool-name">ペン</b></span>
+      <span class="spacer"></span>
+      <span>ズーム</span>
+      <button class="btn-small" id="btn-zoom-out">−</button>
+      <b id="zoom-val">10</b>
+      <button class="btn-small" id="btn-zoom-in">＋</button>
+    </div>
+    <div class="canvas-wrap" id="canvas-wrap">
+      <svg id="trace-svg" width="100" height="100" viewBox="0 0 100 100"></svg>
+    </div>
+    <div class="canvas-status" id="canvas-status">起動中…</div>
+  </main>
+
+  <!-- 右：設定・検証・保存 -->
+  <aside class="ed-right">
+
+    <section class="panel">
+      <h2>グリッド設定</h2>
+      <label class="block lbl">プリセット</label>
+      <select id="preset-select"></select>
+      <div class="row">
+        <label>横W</label><input type="number" id="grid-w" min="3" max="200" value="80">
+        <label>縦H</label><input type="number" id="grid-h" min="3" max="200" value="100">
+      </div>
+      <p class="hint">3〜200・偶数OK（奇数丸めなし）。縮小で刺し目が落ちる時は確認します。</p>
+      <label class="block lbl">セル縦横比 cellAspect（仮・要実測） <b id="aspect-val">1.00</b></label>
+      <input type="number" id="cell-aspect" min="0.5" max="2.0" step="0.01" value="1.0">
+      <label class="check"><input type="checkbox" id="chk-grid" checked> グリッド線</label>
+      <label class="check"><input type="checkbox" id="chk-5" checked> 5目ごと太罫</label>
+      <label class="check"><input type="checkbox" id="chk-center"> 中心線（十字・破線）</label>
+      <label class="block lbl">グリッド線の濃さ <b id="gridop-val">18%</b></label>
+      <input type="range" id="grid-opacity" min="4" max="60" step="1" value="18">
+    </section>
+
+    <section class="panel">
+      <h2>下絵（トレース元）</h2>
+      <div class="dropzone" id="underlay-dz">
+        画像をドラッグ&ドロップ /
+        <label class="file-btn btn-small">ファイル選択<input type="file" id="underlay-file" accept="image/*"></label>
+        <button class="btn-small" id="btn-underlay-sample">サンプル</button>
+      </div>
+      <label class="block lbl">透過 <b id="uop-val">50%</b></label>
+      <input type="range" id="underlay-opacity" min="0" max="100" step="1" value="50">
+      <label class="check"><input type="checkbox" id="chk-grayscale"> グレースケール</label>
+      <div class="row">
+        <label>回転</label>
+        <button class="btn-small" id="btn-rot-l">−90°</button>
+        <button class="btn-small" id="btn-rot-r">＋90°</button>
+      </div>
+      <label class="block lbl">微調整 <b id="urot-val">0°</b></label>
+      <input type="range" id="underlay-rot" min="-45" max="45" step="1" value="0">
+      <div class="row">
+        <button class="btn-small" id="btn-underlay-center">中心合わせ</button>
+        <button class="btn-small" id="btn-underlay-clear">下絵クリア</button>
+      </div>
+      <p class="hint">「下絵移動」ツール(6)でドラッグ移動・ホイールで拡縮。cells には影響しません。</p>
+    </section>
+
+    <section class="panel">
+      <h2>範囲選択の操作</h2>
+      <div class="row">
+        <button class="btn-small" id="btn-copy">コピー</button>
+        <button class="btn-small" id="btn-rect-fill">一括塗り</button>
+        <button class="btn-small" id="btn-rect-erase">一括消し</button>
+      </div>
+      <button class="btn-small" id="btn-repeat">連続ペースト…</button>
+      <div class="repeat-form hidden" id="repeat-form">
+        <div class="row">
+          <label>横回数</label><input type="number" id="rep-nx" min="1" max="50" value="3">
+          <label>縦回数</label><input type="number" id="rep-ny" min="1" max="50" value="3">
+        </div>
+        <div class="row">
+          <label>横間隔</label><input type="number" id="rep-gapx" min="0" max="20" value="1">
+          <label>縦間隔</label><input type="number" id="rep-gapy" min="0" max="20" value="1">
+        </div>
+        <p class="hint">クリップをアンカーに置き、キャンバス上でクリックして一括配置（undo1回で戻る）。</p>
+        <div class="row">
+          <button class="btn-primary" id="rep-place">配置モードへ</button>
+          <button class="btn-small" id="rep-cancel">閉じる</button>
+        </div>
+      </div>
+      <p class="hint">範囲選択(5)でドラッグ→矩形。コピー後に連続ペーストで反復配置。</p>
+    </section>
+
+    <section class="panel">
+      <h2>検証</h2>
+      <div class="stat"><span>総目数</span><b id="stat-cells">0</b></div>
+      <div class="stat"><span>渡り本数</span><b id="stat-runs">0</b></div>
+      <div class="stat"><span>使用色数</span><b id="stat-colors">0</b></div>
+      <div class="stat"><span>最長渡り</span><b id="stat-maxrun">0</b></div>
+      <div class="percolor" id="percolor"></div>
+      <div class="row" style="margin-top:8px">
+        <span class="badge ok" id="float-badge">float&gt;7: 0箇所</span>
+        <span class="badge ok" id="even-badge">偶数ラン: 0箇所</span>
+      </div>
+      <p class="hint" id="even-note">参考: 奇数目が伝統則とされる。確認中（ブロックしません）。</p>
+      <button class="btn-primary" id="btn-chart" style="margin-top:8px">チャート出力…</button>
+      <p class="hint" id="chart-hint"></p>
+    </section>
+
+    <section class="panel">
+      <h2>保存</h2>
+      <div class="row">
+        <button class="btn-small" id="btn-save">JSONで保存</button>
+        <label class="file-btn btn-small">JSON読込<input type="file" id="load-file" accept="application/json,.json"></label>
+      </div>
+      <p class="hint">自動保存: 各操作後に localStorage へ。次回起動時に復元を確認します。</p>
+    </section>
+
+  </aside>
+</div>
+
+<div id="trace-chart-overlay"></div>
+
+<script src="js/image-loader.js"></script>
+<script src="js/sample.js"></script>
+<script src="js/trace-config.js"></script>
+<script src="js/trace-state.js"></script>
+<script src="js/trace-validate.js"></script>
+<script src="js/trace-render.js"></script>
+<script src="js/trace-chart.js"></script>
+<script src="js/trace-app.js"></script>
+</body>
+</html>

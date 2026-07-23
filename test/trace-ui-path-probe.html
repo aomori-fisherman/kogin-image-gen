@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="UTF-8"><title>trace-ui-path-probe</title>
+<style>#trace-svg{display:block}.hidden{display:none}</style>
+</head>
+<body>
+<!-- 調査B専用プローブ: editor.html と同一IDの「範囲選択の操作」DOMを最小構成で置き、
+     実UI導線（ツールモード→実ボタンclick）を MouseEvent 合成で駆動して再現する。
+     合成setRect API(TraceApp.setRect)は使わず、rectSel は必ず rectツールのドラッグ経由で作る。 -->
+<svg id="trace-svg" width="100" height="100" viewBox="0 0 100 100"></svg>
+
+<!-- ツールボタン（bindControls が setTool を結線） -->
+<button id="tool-pen"></button>
+<button id="tool-diag"></button>
+<button id="tool-eraser"></button>
+<button id="tool-select"></button>
+<button id="tool-rect"></button>
+<button id="tool-underlay"></button>
+
+<!-- 範囲選択の操作（editor.html と同一ID） -->
+<button id="btn-copy"></button>
+<button id="btn-rect-fill"></button>
+<button id="btn-rect-erase"></button>
+<button id="btn-repeat"></button>
+<div id="repeat-form" class="hidden">
+  <input type="number" id="rep-nx" value="2">
+  <input type="number" id="rep-ny" value="2">
+  <input type="number" id="rep-gapx" value="1">
+  <input type="number" id="rep-gapy" value="1">
+  <button id="rep-place"></button>
+  <button id="rep-cancel"></button>
+</div>
+<div id="canvas-status"></div>
+
+<div id="trace-harness-result">PENDING</div>
+
+<script>
+  // alert/confirm を記録（導線ゲートの発火を検出する）
+  window.__alerts = [];
+  window.alert = function (m) { window.__alerts.push(String(m)); };
+  window.confirm = function () { return true; };
+  window.__initErr = null;
+  window.addEventListener('error', function (ev) { if (!window.__initErr) window.__initErr = (ev.message || '') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''); });
+</script>
+<script src="../js/image-loader.js"></script>
+<script src="../js/sample.js"></script>
+<script src="../js/trace-config.js"></script>
+<script src="../js/trace-state.js"></script>
+<script src="../js/trace-validate.js"></script>
+<script src="../js/trace-render.js"></script>
+<script src="../js/trace-chart.js"></script>
+<script src="../js/trace-app.js"></script>
+<script>
+function runProbe() {
+  var out = document.getElementById('trace-harness-result');
+  function done(o) { out.textContent = 'RESULT:' + JSON.stringify(o); }
+  function md(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); TraceApp.svg().dispatchEvent(new MouseEvent('mousedown', { clientX: p.clientX, clientY: p.clientY, bubbles: true, cancelable: true })); }
+  function mm(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mousemove', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
+  function mu(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mouseup', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
+  function click(id) { document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+  function resetAlerts() { window.__alerts.length = 0; }
+
+  try {
+    if (typeof TraceApp === 'undefined') { done({ ok: false, error: 'TraceApp 未定義（初期化失敗）', initErr: window.__initErr }); return; }
+    var checks = {};
+
+    // ============================================================
+    // PATH 1（正規導線）: 範囲選択(rect, tool5)でドラッグ矩形 → 実ボタンで一括塗り/コピー/連続ペースト
+    // ============================================================
+    TraceApp.reset(21, 16);
+    TraceApp.setTool('rect');
+    // 実ドラッグで矩形選択 (2,2)→(6,5) = 5×4。合成setRectは使わない。
+    md(2, 2); mm(6, 5); mu(6, 5);
+    // rectSel が実ドラッグで確定したことを copyRect 経由で間接確認（読み取り専用）
+    var probeClip = TraceApp.copyRect();
+    checks.p1_rectSelFromDrag = !!probeClip && probeClip.w === 5 && probeClip.h === 4;
+
+    // 一括塗り（btn-rect-fill）: rectSel を activeColor で塗る
+    resetAlerts();
+    TraceApp.setActiveColor('r01');
+    var beforeFill = TraceApp.cellCount();
+    click('btn-rect-fill');
+    checks.p1_fill_noAlert = window.__alerts.length === 0;
+    checks.p1_fill_cells20 = TraceApp.cellCount() === 20;
+    checks.p1_fill_added = TraceApp.cellCount() > beforeFill;
+
+    // コピー（btn-copy）: clip をセット
+    resetAlerts();
+    click('btn-copy');
+    var clip = TraceApp.getClip();
+    checks.p1_copy_noAlert = window.__alerts.length === 0;
+    checks.p1_copy_clip5x4 = !!clip && clip.w === 5 && clip.h === 4;
+
+    // 連続ペースト（btn-repeat → repeat-form 表示 → rep-place → キャンバスclick）
+    resetAlerts();
+    click('btn-repeat');
+    checks.p1_repeat_formShown = !document.getElementById('repeat-form').classList.contains('hidden');
+    document.getElementById('rep-nx').value = '1';
+    document.getElementById('rep-ny').value = '1';
+    document.getElementById('rep-gapx').value = '0';
+    document.getElementById('rep-gapy').value = '0';
+    click('rep-place');
+    var beforePaste = TraceApp.cellCount();
+    md(10, 8); // repeatMode 中の mousedown で配置＋commit（空き領域に 5×4=20 目）
+    var afterPaste = TraceApp.cellCount();
+    checks.p1_paste_noAlert = window.__alerts.length === 0;
+    checks.p1_paste_added20 = (afterPaste - beforePaste) === 20;
+
+    // 一括消し（btn-rect-erase）: 再度 rect ドラッグしてから消す
+    TraceApp.setTool('rect');
+    md(2, 2); mm(6, 5); mu(6, 5);
+    resetAlerts();
+    var beforeErase = TraceApp.cellCount();
+    click('btn-rect-erase');
+    checks.p1_erase_noAlert = window.__alerts.length === 0;
+    checks.p1_erase_removed = TraceApp.cellCount() < beforeErase;
+
+    // ============================================================
+    // PATH 2（導線ミス再現）: 選択(select, tool4=ラン選択)後に一括塗り/連続ペースト
+    //   → rectSel/clip が無いので機能は「使えない」ように見える（alert で弾かれる）
+    // ============================================================
+    TraceApp.reset(21, 16);
+    // ラン選択の対象を作る
+    TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    md(2, 2); mm(6, 2); mu(6, 2); // 行2に 5目
+    var cntAfterPen = TraceApp.cellCount(); // 5
+    // 選択（ラン）ツールでランをクリック選択
+    TraceApp.setTool('select');
+    md(3, 2); // selection にラン (2..6,y2) が入る
+    // ユーザーは「選択したから塗れるはず」と一括塗りを押す
+    resetAlerts();
+    TraceApp.setActiveColor('b01');
+    click('btn-rect-fill');
+    checks.p2_selectThenFill_alerted = window.__alerts.length === 1;      // ゲート発火＝「使えない」の正体
+    checks.p2_selectThenFill_noChange = TraceApp.cellCount() === cntAfterPen; // 塗られない
+    // 同様に連続ペーストも clip 無しで弾かれる
+    resetAlerts();
+    click('btn-repeat');
+    checks.p2_selectThenRepeat_alerted = window.__alerts.length === 1;
+    checks.p2_repeat_formStillHidden = document.getElementById('repeat-form').classList.contains('hidden');
+
+    // ============================================================
+    // PATH 3: ツール切替で rectSel が保持されるか（導線の副論点）
+    //   rect で矩形→pen に切替→再度ボタンを押す、を検証
+    // ============================================================
+    TraceApp.reset(21, 16);
+    TraceApp.setTool('rect');
+    md(1, 1); mm(4, 4); mu(4, 4); // 4×4
+    TraceApp.setTool('pen');      // 別ツールへ切替
+    resetAlerts();
+    TraceApp.setActiveColor('g01');
+    click('btn-rect-fill');       // rectSel は setTool で消えない設計→塗れるはず
+    checks.p3_rectSelSurvivesToolSwitch = window.__alerts.length === 0 && TraceApp.cellCount() === 16;
+
+    var ok = Object.keys(checks).every(function (k) { return checks[k]; });
+    done({ ok: ok, checks: checks, alerts: window.__alerts });
+  } catch (e) {
+    done({ ok: false, error: (e && e.message) || String(e), stack: (e && e.stack) || '' });
+  }
+}
+if (document.readyState === 'complete') runProbe();
+else window.addEventListener('load', runProbe);
+</script>
+</body>
+</html>
