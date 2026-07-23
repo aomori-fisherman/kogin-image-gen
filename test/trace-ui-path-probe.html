@@ -4,9 +4,11 @@
 <style>#trace-svg{display:block}.hidden{display:none}</style>
 </head>
 <body>
-<!-- 調査B専用プローブ: editor.html と同一IDの「範囲選択の操作」DOMを最小構成で置き、
+<!-- 調査B/T0.5導線プローブ: editor.html と同一IDの「範囲選択の操作」DOMを最小構成で置き、
      実UI導線（ツールモード→実ボタンclick）を MouseEvent 合成で駆動して再現する。
-     合成setRect API(TraceApp.setRect)は使わず、rectSel は必ず rectツールのドラッグ経由で作る。 -->
+     合成setRect API(TraceApp.setRect)は使わず、rectSel は必ず rectツールのドラッグ経由で作る。
+     T0.5改修（#11）: 未達の操作ボタンは alert でなく is-disabled 表示＋ canvas-status で次の一手を提示。
+     PATH2 はその新導線（alertゼロ・ガイド提示・disabled見た目）を検証する。 -->
 <svg id="trace-svg" width="100" height="100" viewBox="0 0 100 100"></svg>
 
 <!-- ツールボタン（bindControls が setTool を結線） -->
@@ -116,28 +118,34 @@ function runProbe() {
     checks.p1_erase_removed = TraceApp.cellCount() < beforeErase;
 
     // ============================================================
-    // PATH 2（導線ミス再現）: 選択(select, tool4=ラン選択)後に一括塗り/連続ペースト
-    //   → rectSel/clip が無いので機能は「使えない」ように見える（alert で弾かれる）
+    // PATH 2（T0.5新導線）: 選択(select, tool4=ラン選択)後に一括塗り/連続ペースト
+    //   → rectSel/clip が無い＝ボタンは is-disabled 表示。押しても alert でなく
+    //     canvas-status に「矩形選択で範囲を作る」次の一手を提示し、変更は起きない。
     // ============================================================
     TraceApp.reset(21, 16);
     // ラン選択の対象を作る
     TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
     md(2, 2); mm(6, 2); mu(6, 2); // 行2に 5目
     var cntAfterPen = TraceApp.cellCount(); // 5
+    // rectSel/clip 無し → 操作ボタンは押せない見た目（is-disabled）
+    checks.p2_fill_isDisabledLook = TraceApp.isDisabledLook('btn-rect-fill') === true;
+    checks.p2_repeat_isDisabledLook = TraceApp.isDisabledLook('btn-repeat') === true;
     // 選択（ラン）ツールでランをクリック選択
     TraceApp.setTool('select');
     md(3, 2); // selection にラン (2..6,y2) が入る
-    // ユーザーは「選択したから塗れるはず」と一括塗りを押す
+    // ユーザーは「選択したから塗れるはず」と一括塗りを押す → alertでなくガイド提示
     resetAlerts();
     TraceApp.setActiveColor('b01');
     click('btn-rect-fill');
-    checks.p2_selectThenFill_alerted = window.__alerts.length === 1;      // ゲート発火＝「使えない」の正体
+    checks.p2_selectThenFill_noAlert = window.__alerts.length === 0;          // モーダルalertは出さない
     checks.p2_selectThenFill_noChange = TraceApp.cellCount() === cntAfterPen; // 塗られない
-    // 同様に連続ペーストも clip 無しで弾かれる
+    checks.p2_selectThenFill_guided = /矩形選択/.test(TraceApp.statusText());  // 次の一手を提示
+    // 同様に連続ペーストも clip 無し → alertでなくガイド提示・フォームは開かない
     resetAlerts();
     click('btn-repeat');
-    checks.p2_selectThenRepeat_alerted = window.__alerts.length === 1;
+    checks.p2_selectThenRepeat_noAlert = window.__alerts.length === 0;
     checks.p2_repeat_formStillHidden = document.getElementById('repeat-form').classList.contains('hidden');
+    checks.p2_repeat_guided = TraceApp.statusText().length > 0;
 
     // ============================================================
     // PATH 3: ツール切替で rectSel が保持されるか（導線の副論点）

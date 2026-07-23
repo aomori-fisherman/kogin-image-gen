@@ -1,5 +1,5 @@
-/* editor.css — こぎんトレース台エディタ T0 専用スタイル（style.css は触らない・独立）。
-   デスクトップ優先（最低幅1000px想定）。ダーク基調は index 版の美観を独立再現。 */
+/* editor.css — こぎんトレース台エディタ T0.5 専用スタイル（style.css は触らない・独立）。
+   デスクトップ優先。上部リボン(低頻度)＋左サイド(高頻度)＋右サイド(折りたたみ既定)＋中央キャンバス最大化。 */
 
 :root {
   --bg: #14181d;
@@ -21,22 +21,42 @@ html, body {
   font-size: 13px; line-height: 1.5;
 }
 
+/* ---- ヘッダ ---- */
 .ed-header {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+  padding: 7px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
 }
-.ed-header h1 { font-size: 16px; margin: 0; font-weight: 700; }
+.ed-header h1 { font-size: 15px; margin: 0; font-weight: 700; }
 .ed-tag { font-size: 10px; background: var(--accent); color: #06232b; padding: 2px 8px; border-radius: 10px; font-weight: 700; }
 .ed-header .spacer { flex: 1; }
 .ed-note { font-size: 11px; color: var(--text-dim); }
 
-.ed-root {
+/* ---- 上部リボン（低頻度・格納可能） ---- */
+.ribbon {
+  display: flex; align-items: stretch; gap: 0; flex-wrap: wrap;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 4px 10px;
+}
+.ribbon.collapsed { display: none; }
+.rb-group { display: flex; flex-direction: column; padding: 2px 12px; border-right: 1px solid var(--line); }
+.rb-group.grow { flex: 1; border-right: none; }
+.rb-group:last-child { border-right: none; }
+.rb-title { font-size: 9.5px; color: var(--accent); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+.rb-body { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rb-lbl { font-size: 11px; color: var(--text-dim); }
+.rb-range { width: 90px; accent-color: var(--accent); }
+.stat-inline { font-size: 11px; color: var(--text-dim); }
+.stat-inline b { color: var(--text); font-variant-numeric: tabular-nums; margin-left: 2px; }
+
+/* ---- ワークスペース（3列・右は折りたたみ） ---- */
+.ws {
   display: grid;
-  grid-template-columns: 230px 1fr 330px;
+  grid-template-columns: 236px 1fr 316px;
   gap: 10px; padding: 10px;
-  min-width: 1000px;
   align-items: start;
 }
+.ws.right-collapsed { grid-template-columns: 236px 1fr 0; }
+.ws-right.collapsed { display: none; }
 
 /* ---- パネル共通 ---- */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
@@ -58,16 +78,28 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .btn-primary { background: var(--accent); color: #06232b; border: none; border-radius: 7px; padding: 7px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .btn-primary:hover { filter: brightness(1.08); }
 .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary.btn-slim { padding: 4px 10px; }
 .btn-small { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
 .btn-small:hover { border-color: var(--accent); }
+.btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+.btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+.block-btn { display: block; width: 100%; margin-top: 8px; }
+.danger-outline { border-color: #5a2a2a; color: #ff9a9a; }
+.danger-outline:hover { border-color: var(--danger); }
+
+/* 導線ガード: rectSel/clip 無しの操作ボタンは「押せない見た目」＋ホバーヒント。
+   click は発火させ、次の一手を canvas-status に提示する（alertにしない）。 */
+.btn-small.is-disabled { opacity: .42; cursor: help; border-style: dashed; }
+.btn-small.is-disabled:hover { border-color: var(--warn); }
 
 /* ---- 左：ツール ---- */
 .tool-list { display: flex; flex-direction: column; gap: 5px; }
-.tool-btn { display: flex; align-items: center; gap: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; cursor: pointer; text-align: left; }
+.tool-btn { display: flex; align-items: center; gap: 8px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 12px; cursor: pointer; text-align: left; }
+.tool-btn .ico { width: 18px; text-align: center; font-size: 13px; color: var(--text-dim); }
 .tool-btn .k { margin-left: auto; font-size: 10px; color: var(--text-dim); }
 .tool-btn:hover { border-color: var(--accent); }
 .tool-btn.active { background: var(--accent); color: #06232b; border-color: var(--accent); font-weight: 700; }
-.tool-btn.active .k { color: #06232b; }
+.tool-btn.active .ico, .tool-btn.active .k { color: #06232b; }
 
 .palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-top: 6px; }
 .sw { aspect-ratio: 1; border-radius: 6px; border: 2px solid var(--line); cursor: pointer; }
@@ -78,34 +110,37 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .undo-row { display: flex; gap: 6px; margin-top: 8px; }
 .undo-row button { flex: 1; }
 
-/* ---- 中央：キャンバス ---- */
-.canvas-col { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+/* ---- 中央：キャンバス（可変幅で最大化） ---- */
+.ws-canvas { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 0; }
 .canvas-toolbar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
 .canvas-toolbar .spacer { flex: 1; }
-.canvas-wrap { overflow: auto; max-height: calc(100vh - 150px); border: 1px solid var(--line); border-radius: 8px; background: #0e1116; }
+.canvas-wrap { overflow: auto; max-height: calc(100vh - 210px); border: 1px solid var(--line); border-radius: 8px; background: #0e1116; }
 #trace-svg { display: block; touch-action: none; cursor: crosshair; }
-.canvas-status { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+.canvas-status { font-size: 11px; color: var(--text-dim); margin-top: 6px; min-height: 16px; }
 
-/* ---- 検証パネル ---- */
-.stat { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
-.stat b { color: var(--text); font-variant-numeric: tabular-nums; }
+/* ---- 検証 badge / percolor ---- */
 .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 700; }
 .badge.ok { background: #1e3a2a; color: #7fd6a0; }
 .badge.bad { background: #3a1e1e; color: #ff9a9a; }
 .badge.warn { background: #3a331e; color: #e7cf7a; }
-.percolor { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.percolor { font-size: 11px; color: var(--text-dim); }
 .percolor .chip { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
 .percolor .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; border: 1px solid #0006; }
 
-/* ---- 下絵ドロップ ---- */
+/* ---- 下絵ドロップ／フィット ---- */
 .dropzone { border: 1.5px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; font-size: 11px; color: var(--text-dim); }
 .dropzone.dragover { border-color: var(--accent); background: var(--panel-2); }
 .file-btn { cursor: pointer; }
 .file-btn input { display: none; }
+.fit-box { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-top: 8px; background: var(--panel-2); }
 
-/* ---- 連続ペースト フォーム ---- */
+/* ---- 連続ペースト フォーム（ステップ可視化） ---- */
 .repeat-form { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-top: 8px; background: var(--panel-2); }
 .repeat-form.hidden { display: none; }
+.steps { list-style: none; display: flex; gap: 4px; margin: 0 0 8px; padding: 0; }
+.steps li { flex: 1; font-size: 9.5px; color: var(--text-dim); text-align: center; padding: 3px 2px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); }
+.steps li.done { color: #7fd6a0; border-color: #2c5540; }
+.steps li.active { color: #06232b; background: var(--accent); border-color: var(--accent); font-weight: 700; }
 
 /* ---- チャートオーバーレイ ---- */
 #trace-chart-overlay { display: none; position: fixed; inset: 0; background: rgba(10,12,16,.94); z-index: 50; overflow: auto; padding: 16px; }
@@ -116,7 +151,7 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .hidden { display: none; }
 
 @media print {
-  .ed-header, .ed-root { display: none !important; }
+  .ed-header, .ribbon, .ws { display: none !important; }
   #trace-chart-overlay { position: static; background: #fff; padding: 0; display: block !important; }
   .tco-bar { display: none !important; }
   .tco-sheet { box-shadow: none; max-width: 100%; padding: 0; }

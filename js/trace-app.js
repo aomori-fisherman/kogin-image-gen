@@ -11,8 +11,18 @@
   function $(id) { return document.getElementById(id); }
 
   var AUTOSAVE_KEY = 'kogin-trace-autosave-v1';
-  var TOOLS = ['pen', 'diag', 'eraser', 'select', 'rect', 'underlay'];
-  var TOOL_NAMES = { pen: 'ペン（塗り）', diag: '斜線（補助）', eraser: '消しゴム', select: '選択', rect: '範囲選択', underlay: '下絵移動' };
+  // 末尾に break を追加（キー7）。underlay はキー6のまま（TOOLS[5]）。
+  var TOOLS = ['pen', 'diag', 'eraser', 'select', 'rect', 'underlay', 'break'];
+  var TOOL_NAMES = { pen: 'ペン（塗り）', diag: '斜線（補助）', eraser: '消しゴム', select: 'ラン選択', rect: '矩形選択', underlay: '下絵移動', break: '切れ目' };
+  var TOOL_TIPS = {
+    pen: 'ドラッグで水平ラン。放すと確定。',
+    diag: 'ドラッグで傾き±1の階段（1行1目）。',
+    eraser: 'クリック/ドラッグで自由方向に消去（行ロックなし）。',
+    select: '同色の渡り1本をクリック選択。矢印で移動/伸縮・パレットで再着色。',
+    rect: 'ドラッグで矩形→左の「範囲選択の操作」でコピー/一括塗り/連続ペースト。',
+    underlay: 'ドラッグで下絵移動・ホイールで拡縮（cellsには影響しません）。',
+    break: '同色の渡りのマス境界をクリックで切れ目を打つ/消す（渡りを分割）。'
+  };
 
   // ---- 状態 ----
   var store;
@@ -44,7 +54,7 @@
     if (extra) for (var k in extra) v[k] = extra[k];
     return v;
   }
-  function analyzeNow() { lastVr = V.analyze(cur().cells, { floatMax: CFG.floatMax }); return lastVr; }
+  function analyzeNow() { lastVr = V.analyze(cur().cells, { floatMax: CFG.floatMax, breaks: cur().breaks }); return lastVr; }
   function applySvg(built) {
     var svg = $('trace-svg');
     svg.setAttribute('width', built.width); svg.setAttribute('height', built.height);
@@ -92,6 +102,34 @@
   function updateButtons() {
     if ($('btn-undo')) $('btn-undo').disabled = !store.canUndo();
     if ($('btn-redo')) $('btn-redo').disabled = !store.canRedo();
+    updateRectButtons();
+  }
+  // 導線ガード（#11）: rectSel/clip の有無で「押せない見た目」＋ホバーヒントを切替。
+  // disabled属性は使わず is-disabled クラス＝click は発火させ、押下時に次の一手を提示する。
+  function setDisabledLook(id, disabled, hint) {
+    var el = $(id); if (!el) return;
+    el.classList.toggle('is-disabled', !!disabled);
+    if (hint) el.title = hint;
+  }
+  function updateRectButtons() {
+    var hasRect = !!rectSel, hasClip = !!clip;
+    var rectHint = '「矩形選択」(5) でドラッグして範囲を作ると使えます';
+    setDisabledLook('btn-copy', !hasRect, rectHint);
+    setDisabledLook('btn-rect-fill', !hasRect, rectHint);
+    setDisabledLook('btn-rect-erase', !hasRect, rectHint);
+    setDisabledLook('btn-repeat', !hasClip, hasRect ? '先に「コピー」してから連続ペースト' : rectHint);
+    updateRepeatSteps();
+  }
+  // 連続ペーストの多段導線を可視化（今どの段か）。
+  function updateRepeatSteps() {
+    var s1 = document.querySelector('#repeat-steps li[data-step="1"]');
+    var s2 = document.querySelector('#repeat-steps li[data-step="2"]');
+    var s3 = document.querySelector('#repeat-steps li[data-step="3"]');
+    if (!s1 || !s2 || !s3) return;
+    var formOpen = $('repeat-form') && !$('repeat-form').classList.contains('hidden');
+    s1.className = clip ? 'done' : (formOpen ? 'active' : '');
+    s2.className = repeatMode ? 'done' : (clip && formOpen ? 'active' : '');
+    s3.className = repeatMode ? 'active' : '';
   }
 
   // ---- 座標 ----
@@ -100,6 +138,28 @@
     var sx = (e.clientX - rect.left) * (lastW / rect.width);
     var sy = (e.clientY - rect.top) * (lastH / rect.height);
     return R.cellAt(view(), sx, sy);
+  }
+  // 切れ目ツール用: 最寄りの縦マス境界 bx（x-1↔x の間）と行 y を返す。
+  function svgBoundary(e) {
+    var svg = $('trace-svg'); var rect = svg.getBoundingClientRect();
+    var sx = (e.clientX - rect.left) * (lastW / rect.width);
+    var sy = (e.clientY - rect.top) * (lastH / rect.height);
+    var cw = zoom, ch = zoom * (cur().grid.cellAspect || 1);
+    return { bx: Math.round((sx - R.PAD) / cw), y: Math.floor((sy - R.PAD) / ch) };
+  }
+  // 切れ目を打つ/消す（同色ランの上のマス境界のみ有効）。
+  function toggleBreakAt(bx, y) {
+    var w = cur().grid.w, h = cur().grid.h;
+    if (y < 0 || y >= h) return;
+    if (bx < 1 || bx > w - 1) { setStatus('切れ目はマスとマスの境界に打てます'); return; }
+    var row = cur().cells[y];
+    if (row[bx - 1] == null || row[bx] == null || row[bx - 1] !== row[bx]) {
+      setStatus('同色の渡りの上でマス境界をクリックしてください（切れ目は同色ランを分割します）');
+      return;
+    }
+    var on = S.toggleBreak(cur().breaks, y, bx);
+    store.commit('break'); renderFull(); scheduleAutosave();
+    setStatus(on ? ('切れ目を追加（行' + y + '・' + (bx - 1) + '↔' + bx + '）') : '切れ目を削除しました');
   }
 
   // ---- ペン ゴースト ----
@@ -127,12 +187,13 @@
   // ---- マウス ----
   function onMouseDown(e) {
     if (repeatMode) { var c0 = svgCell(e); var wri = S.repeatPaste(cur().cells, clip, c0.x, c0.y, repeatParams.nx, repeatParams.ny, repeatParams.gx, repeatParams.gy); store.commit('repeat'); repeatMode = false; ghostCells = null; renderFull(); scheduleAutosave(); setStatus('連続ペースト: ' + wri + '目を配置'); return; }
+    if (tool === 'break') { var b = svgBoundary(e); toggleBreakAt(b.bx, b.y); return; }
     var c = svgCell(e);
     if (c.x < 0 || c.y < 0 || c.x >= cur().grid.w || c.y >= cur().grid.h) { if (tool !== 'underlay') return; }
     if (tool === 'pen') { drag = { mode: 'pen', y: clampY(c.y), x1: clampX(c.x), x2: clampX(c.x) }; setPenGhost(); schedulePreview(); }
     else if (tool === 'diag') { drag = { mode: 'diag', x0: clampX(c.x), y0: clampY(c.y), dx: 0, dy: 0 }; setDiagGhost(); schedulePreview(); }
-    else if (tool === 'eraser') { drag = { mode: 'eraser', y: clampY(c.y) }; S.eraseRange(cur().cells, drag.y, clampX(c.x), clampX(c.x)); scheduleFull(); }
-    else if (tool === 'select') { selection = S.runAt(cur().cells, clampX(c.x), clampY(c.y)); renderFull(); }
+    else if (tool === 'eraser') { drag = { mode: 'eraser' }; S.eraseRange(cur().cells, clampY(c.y), clampX(c.x), clampX(c.x), cur().breaks); scheduleFull(); }
+    else if (tool === 'select') { selection = S.runAt(cur().cells, clampX(c.x), clampY(c.y), S.breaksRowOf(cur().breaks, clampY(c.y))); renderFull(); }
     else if (tool === 'rect') { drag = { mode: 'rect' }; marquee = { x0: clampX(c.x), y0: clampY(c.y), x1: clampX(c.x), y1: clampY(c.y) }; rectSel = null; schedulePreview(); }
     else if (tool === 'underlay') { if (cur().underlay) drag = { mode: 'underlay', sx: e.clientX, sy: e.clientY, ox: cur().underlay.x, oy: cur().underlay.y }; }
   }
@@ -142,7 +203,7 @@
     var c = svgCell(e);
     if (drag.mode === 'pen') { drag.x2 = clampX(c.x); setPenGhost(); schedulePreview(); }
     else if (drag.mode === 'diag') { drag.dx = clampX(c.x) - drag.x0; drag.dy = clampY(c.y) - drag.y0; setDiagGhost(); schedulePreview(); }
-    else if (drag.mode === 'eraser') { S.eraseRange(cur().cells, drag.y, clampX(c.x), clampX(c.x)); scheduleFull(); }
+    else if (drag.mode === 'eraser') { S.eraseRange(cur().cells, clampY(c.y), clampX(c.x), clampX(c.x), cur().breaks); scheduleFull(); }
     else if (drag.mode === 'rect') { marquee.x1 = clampX(c.x); marquee.y1 = clampY(c.y); schedulePreview(); }
     else if (drag.mode === 'underlay') {
       var svg = $('trace-svg'); var rect = svg.getBoundingClientRect();
@@ -167,18 +228,18 @@
     var r = selection, w = cur().grid.w, h = cur().grid.h;
     var ny = r.y + dy, ns = r.start + dx, ne = ns + r.len - 1;
     if (ny < 0 || ny >= h || ns < 0 || ne > w - 1) return;
-    S.moveRun(cur().cells, r, dx, dy);
+    S.moveRun(cur().cells, r, dx, dy, cur().breaks);   // 切れ目は移動に引き継がない
     selection = { y: ny, start: ns, len: r.len, colorId: r.colorId };
     store.commit('move'); renderFull(); scheduleAutosave();
   }
   function resizeSel(edge, delta) {
     var r = selection, mid = clamp(r.start + Math.floor(r.len / 2), 0, cur().grid.w - 1);
     S.resizeRun(cur().cells, r, edge, delta);
-    var nr = S.runAt(cur().cells, mid, r.y); if (nr) selection = nr;
+    var nr = S.runAt(cur().cells, mid, r.y, S.breaksRowOf(cur().breaks, r.y)); if (nr) selection = nr;
     store.commit('resize-run'); renderFull(); scheduleAutosave();
   }
   function deleteSel() {
-    S.eraseRange(cur().cells, selection.y, selection.start, selection.start + selection.len - 1);
+    S.eraseRange(cur().cells, selection.y, selection.start, selection.start + selection.len - 1, cur().breaks);
     selection = null; store.commit('del'); renderFull(); scheduleAutosave();
   }
   function recolorSel(id) {
@@ -195,7 +256,7 @@
       else if (selection) { selection = null; renderFull(); }
       return;
     }
-    if (!e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '6') { setTool(TOOLS[+e.key - 1]); e.preventDefault(); return; }
+    if (!e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '7') { var ti = +e.key - 1; if (TOOLS[ti]) setTool(TOOLS[ti]); e.preventDefault(); return; }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { doUndo(); e.preventDefault(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { doRedo(); e.preventDefault(); return; }
     if (tool === 'select' && selection) {
@@ -221,6 +282,7 @@
     if (t !== 'select') selection = selection; // 選択は保持
     for (var i = 0; i < TOOLS.length; i++) { var b = $('tool-' + TOOLS[i]); if (b) b.classList.toggle('active', TOOLS[i] === t); }
     if ($('cur-tool-name')) $('cur-tool-name').textContent = TOOL_NAMES[t] || t;
+    if ($('tool-tip')) $('tool-tip').textContent = TOOL_TIPS[t] || '';
     renderPreview();
   }
   function setActiveColor(id) {
@@ -260,7 +322,7 @@
   function applyResize(w, h) {
     var res = S.resizeGrid(cur(), w, h);
     if (res.dropped > 0 && !window.confirm(res.dropped + '個の刺し目が範囲外になり消えます。続けますか？')) { syncGridControls(); return; }
-    cur().grid = res.doc.grid; cur().cells = res.doc.cells;
+    cur().grid = res.doc.grid; cur().cells = res.doc.cells; cur().breaks = res.doc.breaks;
     selection = null; marquee = null; rectSel = null;
     store.commit('resize'); renderFull(); syncGridControls(); scheduleAutosave();
   }
@@ -294,6 +356,29 @@
   function loadUnderlaySample() {
     var url = SAMPLE.makeSampleDataUrl(400); var cv = document.createElement('canvas');
     IL.loadUrlToCanvas(url, cv, 480).then(function (r) { setUnderlay(cv, r.width, r.height); }).catch(function (e) { alert('サンプル読込失敗: ' + e.message); });
+  }
+  // #2 下絵をマス目指定で一発フィット。scale = (N × cellPx) / underlay寸法。
+  // 単一スケール（縦横比は常に維持）。axis='w' は横N目・'h' は縦N目基準。
+  function fitUnderlay(n, axis) {
+    var u = cur().underlay; if (!u) { setStatus('先に下絵を読み込んでください'); return; }
+    n = clamp(Math.round(n) || 1, 1, 200);
+    var cellW = zoom, cellH = zoom * (cur().grid.cellAspect || 1);
+    if (axis === 'h') u.scale = (n * cellH) / u.h; else u.scale = (n * cellW) / u.w;
+    centerUnderlay(); renderFull(); scheduleAutosave();
+    setStatus('下絵を' + (axis === 'h' ? '縦' : '横') + n + '目に合わせました（縦横比維持）');
+  }
+  // #9(b) 全消去（確認ダイアログ付き）。cells 全 null＋breaks クリア。undoで戻せる。
+  function clearAll() {
+    var vr = lastVr || analyzeNow();
+    if (vr.cellCount === 0 && Object.keys(cur().breaks).length === 0) { setStatus('すでに空です'); return; }
+    if (!window.confirm('すべての刺し目と切れ目を消去します。よろしいですか？（取り消しで戻せます）')) return;
+    var c = cur().cells;
+    for (var y = 0; y < c.length; y++) for (var x = 0; x < c[y].length; x++) c[y][x] = null;
+    cur().breaks = {};
+    selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; ghostCells = null;
+    if ($('repeat-form')) $('repeat-form').classList.add('hidden');
+    store.commit('clear-all'); renderFull(); scheduleAutosave();
+    setStatus('全消去しました');
   }
 
   // ---- 保存 ----
@@ -354,16 +439,27 @@
     on('underlay-rot', 'input', function () { if ($('urot-val')) $('urot-val').textContent = this.value + '°'; if (cur().underlay) { var coarse = Math.round(cur().underlay.rotateDeg / 90) * 90; cur().underlay.rotateDeg = coarse + parseInt(this.value, 10); renderPreview(); scheduleAutosave(); } });
     on('btn-underlay-center', 'click', function () { centerUnderlay(); renderFull(); scheduleAutosave(); });
     on('btn-underlay-clear', 'click', function () { cur().underlay = null; renderFull(); scheduleAutosave(); });
-    // 範囲選択
-    on('btn-copy', 'click', function () { if (!rectSel) { alert('先に範囲選択(5)で矩形を選んでください'); return; } clip = S.copyRect(cur().cells, rectSel.x, rectSel.y, rectSel.w, rectSel.h); setStatus('コピー: ' + clip.w + '×' + clip.h + '目'); });
-    on('btn-rect-fill', 'click', function () { if (!rectSel) { alert('先に範囲選択してください'); return; } for (var y = rectSel.y; y < rectSel.y + rectSel.h; y++) S.paintRun(cur().cells, y, rectSel.x, rectSel.x + rectSel.w - 1, activeColor); store.commit('rect-fill'); renderFull(); scheduleAutosave(); });
-    on('btn-rect-erase', 'click', function () { if (!rectSel) { alert('先に範囲選択してください'); return; } for (var y = rectSel.y; y < rectSel.y + rectSel.h; y++) S.eraseRange(cur().cells, y, rectSel.x, rectSel.x + rectSel.w - 1); store.commit('rect-erase'); renderFull(); scheduleAutosave(); });
-    on('btn-repeat', 'click', function () { if (!clip) { alert('先にコピーしてください'); return; } if ($('repeat-form')) $('repeat-form').classList.remove('hidden'); });
+    // 範囲選択（導線ガードは alert でなく次の一手を提示＝#11）
+    on('btn-copy', 'click', function () { if (!guardRect()) return; clip = S.copyRect(cur().cells, rectSel.x, rectSel.y, rectSel.w, rectSel.h); updateRectButtons(); setStatus('コピー: ' + clip.w + '×' + clip.h + '目（連続ペーストが使えます）'); });
+    on('btn-rect-fill', 'click', function () { if (!guardRect()) return; for (var y = rectSel.y; y < rectSel.y + rectSel.h; y++) S.paintRun(cur().cells, y, rectSel.x, rectSel.x + rectSel.w - 1, activeColor); store.commit('rect-fill'); renderFull(); scheduleAutosave(); });
+    on('btn-rect-erase', 'click', function () { if (!guardRect()) return; for (var y = rectSel.y; y < rectSel.y + rectSel.h; y++) S.eraseRange(cur().cells, y, rectSel.x, rectSel.x + rectSel.w - 1, cur().breaks); store.commit('rect-erase'); renderFull(); scheduleAutosave(); });
+    on('btn-repeat', 'click', function () { if (!guardClip()) return; if ($('repeat-form')) $('repeat-form').classList.remove('hidden'); updateRepeatSteps(); setStatus('連続ペースト: 回数・間隔を入れて「配置モードへ」'); });
     on('rep-cancel', 'click', function () { if ($('repeat-form')) $('repeat-form').classList.add('hidden'); repeatMode = false; ghostCells = null; renderFull(); });
     on('rep-place', 'click', function () {
-      if (!clip) { alert('先にコピーしてください'); return; }
+      if (!guardClip()) return;
       repeatParams = { nx: clampInput('rep-nx', 1, 50), ny: clampInput('rep-ny', 1, 50), gx: clampInput('rep-gapx', 0, 20), gy: clampInput('rep-gapy', 0, 20) };
-      repeatMode = true; setStatus('連続ペースト: キャンバスをクリックして配置'); if ($('repeat-form')) $('repeat-form').classList.add('hidden');
+      repeatMode = true; setStatus('連続ペースト: キャンバスをクリックして配置'); if ($('repeat-form')) $('repeat-form').classList.add('hidden'); updateRepeatSteps();
+    });
+    // #2 下絵フィット・#9 全消去
+    on('btn-underlay-fit-w', 'click', function () { fitUnderlay(clampInput('underlay-fit-n', 1, 200), 'w'); });
+    on('btn-underlay-fit-h', 'click', function () { fitUnderlay(clampInput('underlay-fit-n', 1, 200), 'h'); });
+    on('btn-clear-all', 'click', clearAll);
+    // リボン格納・右パネル折りたたみ
+    on('btn-ribbon-toggle', 'click', function () { if ($('ribbon')) $('ribbon').classList.toggle('collapsed'); });
+    on('btn-toggle-right', 'click', function () {
+      if ($('ws')) $('ws').classList.toggle('right-collapsed');
+      if ($('ws-right')) $('ws-right').classList.toggle('collapsed');
+      renderFull();
     });
     // 検証・保存
     on('btn-chart', 'click', function () { if (lastVr.floatViolations.length > 0) return; C.open(cur(), lastVr, CFG); });
@@ -371,6 +467,20 @@
     on('load-file', 'change', function () { if (this.files && this.files[0]) loadJsonFile(this.files[0]); });
   }
   function clampInput(id, lo, hi) { var el = $(id); var v = el ? parseInt(el.value, 10) : lo; return clamp(isNaN(v) ? lo : v, lo, hi); }
+  // 導線ガード（#11）: 未達なら alert でなく「次の一手」を提示し false を返す。
+  function flashTool(id) { var b = $(id); if (b) { b.classList.add('active'); setTimeout(function () { for (var i = 0; i < TOOLS.length; i++) { var e = $('tool-' + TOOLS[i]); if (e) e.classList.toggle('active', TOOLS[i] === tool); } }, 900); } }
+  function guardRect() {
+    if (rectSel) return true;
+    setStatus('「矩形選択」(5) でキャンバスをドラッグして範囲を作ってください →その後この操作が使えます');
+    flashTool('tool-rect');
+    return false;
+  }
+  function guardClip() {
+    if (clip) return true;
+    setStatus(rectSel ? '先に「コピー」を押してから連続ペーストできます' : '「矩形選択」(5) で範囲→「コピー」の順で連続ペーストが使えます');
+    if (!rectSel) flashTool('tool-rect');
+    return false;
+  }
   function rotateUnderlay(deg) {
     if (!cur().underlay) return;
     cur().underlay.rotateDeg += deg;
@@ -403,7 +513,18 @@
       repeatPasteAt: function (ax, ay, nx, ny, gx, gy) { var wri = S.repeatPaste(cur().cells, clip, ax, ay, nx, ny, gx, gy); store.commit('repeat'); renderFull(); return wri; },
       openChart: function () { return C.buildChartSVG(cur(), lastVr, CFG); },
       serialize: function () { return S.serialize(cur()); },
-      load: function (str) { store.replace(S.deserialize(str)); renderFull(); }
+      load: function (str) { store.replace(S.deserialize(str)); renderFull(); },
+      // break（切れ目）テスト用
+      addBreak: function (y, x) { var r = S.addBreak(cur().breaks, y, x); store.commit('break'); renderFull(); return r; },
+      toggleBreak: function (y, x) { var r = S.toggleBreak(cur().breaks, y, x); store.commit('break'); renderFull(); return r; },
+      getBreaks: function () { return cur().breaks; },
+      hasBreak: function (y, x) { return S.hasBreakAt(cur().breaks, y, x); },
+      violations: function () { return lastVr ? lastVr.floatViolations.length : 0; },
+      clearAll: clearAll,
+      setActiveColorForce: setActiveColor,
+      rectSel: function () { return rectSel; },
+      isDisabledLook: function (id) { var el = $(id); return !!(el && el.classList.contains('is-disabled')); },
+      statusText: function () { return $('canvas-status') ? $('canvas-status').textContent : ''; }
     };
   }
 

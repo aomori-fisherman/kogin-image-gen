@@ -93,6 +93,34 @@ function runHarness() {
     TraceApp.load(str);
     checks.reloadCells13 = TraceApp.cellCount() === 13;
 
+    // 10. break（切れ目）E2E: 8目同色→float違反→x=4切れ目→違反解消(4+4)→roundtrip保持
+    TraceApp.reset(10, 2);
+    TraceApp.setTool('pen'); TraceApp.setOddSnap(false); TraceApp.setActiveColor('r01');
+    md(0, 0); mm(7, 0); mu(7, 0); // 行0に8目
+    checks.brk_before_cells8 = TraceApp.cellCount() === 8;
+    checks.brk_before_violation1 = TraceApp.violations() === 1;
+    TraceApp.addBreak(0, 4);       // 3↔4 に切れ目
+    checks.brk_after_violation0 = TraceApp.violations() === 0;
+    checks.brk_after_maxrun4 = TraceApp.getVr().maxRunLen === 4;
+    checks.brk_after_runs2 = TraceApp.getVr().runCount === 2;
+    checks.brk_hasBreak = TraceApp.hasBreak(0, 4) === true;
+    var bstr = TraceApp.serialize();
+    var bd = window.TraceState.deserialize(bstr);
+    checks.brk_roundtrip = !!(bd.breaks && bd.breaks[0] && bd.breaks[0].indexOf(4) >= 0);
+    TraceApp.load(bstr);
+    checks.brk_reload_violation0 = TraceApp.violations() === 0;
+
+    // 11. break undo/redo 復元: 切れ目コミットを取り消すと違反が復活
+    TraceApp.reset(10, 1);
+    TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    md(0, 0); mm(7, 0); mu(7, 0);
+    TraceApp.addBreak(0, 4);
+    checks.brk_undo_pre0 = TraceApp.violations() === 0;
+    TraceApp.undo();
+    checks.brk_undo_restores = TraceApp.violations() === 1 && TraceApp.hasBreak(0, 4) === false;
+    TraceApp.redo();
+    checks.brk_redo_reapplies = TraceApp.violations() === 0 && TraceApp.hasBreak(0, 4) === true;
+
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks, written: written, clipNonNull: clipNonNull, symCells: symCells, legendRows: legendRows });
   } catch (e) {
