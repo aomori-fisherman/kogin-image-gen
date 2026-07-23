@@ -36,6 +36,16 @@
 - **Esc**: 進行中の操作（矩形選択・連続ペースト・切れ目・パン・選択）をキャンセルして既定ツール（ペン）へ。
 - 不変: `floatMax=7`・break層・T0.5の3列レイアウト・純関数の後方互換（`lineCells` 追加のみ）。
 
+## T0.5.2 改修サマリー（#13〜#16・R3・下絵まわり）
+
+> 実機スモークの下絵フィードバック4点。データモデル（cells/breaks/floatMax=7）は不変。下絵ジオメトリの座標系を zoom非依存化するのが主変更。
+
+- **ズームと下絵の一体化**（#13・最優先）: 下絵ジオメトリ（`underlay.x/y/scale`）を **zoom非依存の world単位**で保持し、描画時に係数 `uf = zoom / ZREF`（ZREF=`zoom.init`=10）で一律スケール。これでズーム/倍率変更時に下絵がグリッドと同率・同中心で拡縮し、**マス目と下絵の相対位置・相対スケールが固定**（1pxもずれない）。`zoom=ZREF` で従来描画と完全一致（後方互換）。`centerUnderlay`/`fitUnderlay`/下絵ドラッグも world単位に統一（ズーム非依存の式）。パンは同一SVGのスクロール＝元から一体。※R3以前に非init倍率で保存した下絵は初期倍率基準で再解釈＝要すれば1回「中心合わせ」（cells/breaksへの影響なし）。
+- **下絵の表示ON/OFF**（#14）: `H` キー／リボン「表示」の「下絵」チェックで表示/非表示トグル（`underlayVisible`）。非表示でも `doc.underlay` は保持（`view.hideUnderlay` で描画スキップのみ）。塗り確認用。
+- **キャンバス直接D&D**（#15）: `#ws-canvas` に画像D&Dで下絵投入（`wireCanvasDnd`）。右パネルのドロップゾーン/ファイル選択は併存。D&D中は `#canvas-dnd-hint` オーバーレイ表示。
+- **マス目数の数値設定UI**（#16）: 上部リボンに「マス目 横×縦＋適用」（`grid-w-top`/`grid-h-top`/`btn-grid-apply`）を昇格。右パネルの `grid-w`/`grid-h` と双方向同期。リサイズ挙動は現行 `resizeGrid`（左上基準・落ちる刺し目は確認）を踏襲。
+- 不変: `floatMax=7`・break層・cells/breaksモデル・ラウンド2の操作コア。
+
 ## 開き方
 
 ```
@@ -110,7 +120,7 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 # 出力DOMの <div id="trace-harness-result"> の RESULT:{...} で "ok":true を確認
 #   trace-harness.html        機能ハーネス（ペン/斜線/矩形/チャート/roundtrip＋break E2E）
 #   trace-ui-path-probe.html  範囲操作の導線（T0.5=disabled表示＋ガイド提示・alertゼロ／20チェック）
-#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア・44チェック）
+#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI・61チェック）
 ```
 
 既存テスト（改修後も green を維持）:
@@ -130,9 +140,9 @@ css/editor.css             エディタ専用CSS（style.css は触らない・T
 js/trace-config.js         全設定・仮値の集約（TRACE_CONFIG）※実色差し替えはここ1ファイル
 js/trace-state.js          ドキュメントモデル・編集純関数・undo/redo・保存・breaks・lineCells補間（Node両用）
 js/trace-validate.js       多色ラン抽出（breaks分割）・float/偶数ラン検出・集計（Node両用）
-js/trace-render.js         cells → SVGレイヤ文字列（breaks分割描画＋切れ目マーカー＋hoverCell）
+js/trace-render.js         cells → SVGレイヤ文字列（breaks分割描画＋切れ目マーカー＋hoverCell＋下絵 uf一律スケール/表示ゲート）
 js/trace-chart.js          チャートSVG生成・印刷・PNG書き出し（T0.5では不変）
-js/trace-app.js            配線層（ツール7種・連続塗り/消し・ズーム/パン/スポイト/ショートカット・切れ目/フィット/導線ガード・保存）
+js/trace-app.js            配線層（ツール7種・連続塗り/消し・ズーム/パン/スポイト/ショートカット・切れ目/フィット/導線ガード・下絵ズーム一体化(uf)/表示トグル(H)/キャンバスD&D/マス目UI・保存）
 test/trace-state-test.cjs      純関数テスト（101・lineCells 補間含む）
 test/trace-validate-test.cjs   純関数テスト（27）
 test/trace-harness.html        機能ハーネス（break E2E含む）
