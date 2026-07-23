@@ -39,8 +39,20 @@
       <label class="check"><input type="checkbox" id="chk-grid" checked> グリッド線</label>
       <label class="check"><input type="checkbox" id="chk-5" checked> 5目太罫</label>
       <label class="check"><input type="checkbox" id="chk-center"> 中心線</label>
+      <label class="check" title="下絵の表示ON/OFF（H キー・データは保持）"><input type="checkbox" id="chk-underlay" checked> 下絵</label>
       <span class="rb-lbl">濃さ <b id="gridop-val">18%</b></span>
       <input type="range" id="grid-opacity" min="4" max="60" step="1" value="18" class="rb-range">
+    </div>
+  </div>
+
+  <div class="rb-group">
+    <div class="rb-title">マス目</div>
+    <div class="rb-body">
+      <span class="rb-lbl">横</span>
+      <input type="number" id="grid-w-top" min="3" max="200" value="80" title="横のマス数">
+      <span class="rb-lbl">×縦</span>
+      <input type="number" id="grid-h-top" min="3" max="200" value="100" title="縦のマス数">
+      <button class="btn-small" id="btn-grid-apply" title="このマス数に変更（塗りは左上基準で残ります）">適用</button>
     </div>
   </div>
 
@@ -127,10 +139,12 @@
   </aside>
 
   <!-- 中央：キャンバス（可変幅で最大化） -->
-  <main class="ws-canvas">
+  <main class="ws-canvas" id="ws-canvas">
+    <!-- #15 キャンバス直接D&D中のオーバーレイ（画像を板に落として下絵を読み込む） -->
+    <div class="canvas-dnd-hint hidden" id="canvas-dnd-hint">ここにドロップで下絵を読み込み</div>
     <div class="canvas-toolbar">
       <span>ツール: <b id="cur-tool-name">ペン</b></span>
-      <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・Esc=ペンに戻る</span>
+      <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・H=下絵ON/OFF・Esc=ペンに戻る</span>
       <span class="spacer"></span>
       <button class="btn-ghost" id="btn-toggle-right" title="右パネルの表示/格納">⚙ 設定パネル</button>
     </div>

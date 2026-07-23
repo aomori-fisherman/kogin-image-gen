@@ -45,6 +45,7 @@ html, body {
 .rb-body { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rb-lbl { font-size: 11px; color: var(--text-dim); }
 .rb-range { width: 90px; accent-color: var(--accent); }
+.rb-body input[type=number] { width: 56px; }   /* #16 リボン内のマス目数入力（コンパクト） */
 .stat-inline { font-size: 11px; color: var(--text-dim); }
 .stat-inline b { color: var(--text); font-variant-numeric: tabular-nums; margin-left: 2px; }
 
@@ -111,7 +112,18 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .undo-row button { flex: 1; }
 
 /* ---- 中央：キャンバス（可変幅で最大化） ---- */
-.ws-canvas { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 0; }
+.ws-canvas { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 0; }
+
+/* ---- キャンバス直接D&Dのオーバーレイ（#15） ---- */
+.canvas-dnd-hint {
+  position: absolute; inset: 8px; z-index: 8;
+  display: flex; align-items: center; justify-content: center;
+  border: 2.5px dashed var(--accent); border-radius: 10px;
+  background: rgba(15,17,22,.82); color: var(--accent);
+  font-size: 16px; font-weight: 700; letter-spacing: .03em;
+  pointer-events: none;   /* ドラッグイベントは下の板が受ける */
+}
+.canvas-dnd-hint.hidden { display: none; }
 .canvas-toolbar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
 .canvas-toolbar .spacer { flex: 1; }
 .canvas-toolbar .op-hint { font-size: 10px; color: var(--text-dim); opacity: .7; }
