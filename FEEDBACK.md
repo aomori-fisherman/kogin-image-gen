@@ -225,3 +225,5 @@
 制約: vanilla JS・依存追加なし／`floatMax=7` 不変／break層・T0.5レイアウトを壊さない／既存テスト全green維持＋smokeに操作コアの新規チェック追加。
 
 **実装結果（2026-07-23・dev）**: 上記1〜7を実装（trace-app.js 配線＋trace-state.js `lineCells`補間＋trace-render.js `hoverCell`＋editor.html/css）。カーソル中心ホイールズーム＋100%/全体表示、Space/中ボタンパン、文字キーP/D/E/R/M/U/B、ペン/消しゴムの線分補間連続塗り、Alt+クリックスポイト、ツール別カーソル＋ホバーハイライト、Esc→既定ツール。テスト全green（state 101・validate 27・harness 28・probe 20・editor-smoke 24→44）・push無し＝伎海の目視スモーク待ち。
+
+**追加（2026-07-23・伎海FB「使い方ページもあると優しい」）**: 独立ページ `help.html`（非エンジニア向け・専門用語言い換え・①これは何か②基本の流れ③ツール表④便利操作⑤切れ目⑥うまくいかない時＝導線問題を先回り案内）を追加。editor.html ヘッダに「？ 使い方」ボタン（新規タブで help.html）。smokeに `b_help_button` チェック追加（→45）。

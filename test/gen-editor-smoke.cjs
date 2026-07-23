@@ -52,6 +52,7 @@ function runSmoke() {
     checks.b_clear_all = !!$('btn-clear-all');
     checks.b_fit_n = !!$('underlay-fit-n') && !!$('btn-underlay-fit-w') && !!$('btn-underlay-fit-h');
     checks.b_repeat_steps = !!$('repeat-steps');
+    checks.b_help_button = !!$('btn-help');   // 「？使い方」ボタン（help.html へのリンク）
     // C. ツール名称の差別化（#11）
     checks.c_name_run = /ラン選択/.test($('tool-select').textContent);
     checks.c_name_rect = /矩形選択/.test($('tool-rect').textContent);

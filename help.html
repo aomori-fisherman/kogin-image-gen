@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>こぎんトレース台エディタ — 使い方</title>
+<style>
+  :root{
+    --bg:#14181d; --panel:#1c222a; --panel2:#232b35; --line:#313b47;
+    --text:#e6ebf0; --dim:#9aa7b4; --accent:#4fb0c6; --warn:#E3C24A; --danger:#E23B3B;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,system-ui,sans-serif;
+    font-size:15px;line-height:1.85;}
+  a{color:var(--accent);}
+  .wrap{max-width:760px;margin:0 auto;padding:24px 20px 80px;}
+  header.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:8px;}
+  header.top h1{font-size:22px;margin:0;font-weight:700;}
+  .tag{font-size:11px;background:var(--accent);color:#06232b;padding:3px 10px;border-radius:12px;font-weight:700;}
+  .back{margin-left:auto;font-size:13px;text-decoration:none;border:1px solid var(--line);
+    color:var(--dim);border-radius:8px;padding:6px 12px;}
+  .back:hover{border-color:var(--accent);color:var(--text);}
+  .lead{color:var(--dim);font-size:14px;margin:10px 0 6px;}
+  h2{font-size:18px;margin:34px 0 10px;color:var(--accent);border-bottom:1px solid var(--line);padding-bottom:6px;}
+  h2 .num{display:inline-block;min-width:26px;}
+  ol.steps{padding-left:0;list-style:none;counter-reset:st;}
+  ol.steps>li{counter-increment:st;position:relative;padding:10px 0 10px 44px;border-bottom:1px dashed var(--line);}
+  ol.steps>li::before{content:counter(st);position:absolute;left:0;top:10px;width:30px;height:30px;
+    background:var(--accent);color:#06232b;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;}
+  ol.steps>li b{color:var(--text);}
+  .fig{background:var(--panel2);border:1px dashed var(--line);border-radius:8px;color:var(--dim);
+    font-size:13px;padding:14px;margin:8px 0;text-align:center;}
+  table{width:100%;border-collapse:collapse;margin:8px 0;background:var(--panel);border-radius:8px;overflow:hidden;}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;font-size:14px;vertical-align:top;}
+  th{background:var(--panel2);color:var(--accent);font-size:13px;}
+  td .ico{font-size:17px;}
+  kbd{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:6px;padding:1px 7px;font-size:12px;color:var(--text);font-family:inherit;min-width:16px;text-align:center;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0;}
+  .card h3{margin:0 0 6px;font-size:15px;color:var(--text);}
+  .note{background:#20303a;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;margin:10px 0;font-size:14px;}
+  .word{color:var(--warn);font-weight:700;}
+  dl.trouble{margin:0;}
+  dl.trouble dt{font-weight:700;color:var(--text);margin-top:14px;}
+  dl.trouble dd{margin:4px 0 0;color:var(--dim);}
+  dl.trouble dd b{color:var(--text);}
+  footer{margin-top:40px;border-top:1px solid var(--line);padding-top:14px;color:var(--dim);font-size:12px;}
+  .center-cta{text-align:center;margin:30px 0 0;}
+  .center-cta a{display:inline-block;background:var(--accent);color:#06232b;font-weight:700;
+    text-decoration:none;border-radius:8px;padding:10px 22px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>こぎんトレース台エディタ の使い方</h1>
+  <span class="tag">はじめての方へ</span>
+  <a class="back" href="editor.html">← エディタに戻る</a>
+</header>
+<p class="lead">むずかしい言葉はできるだけ使わずに書いています。上から順に読めば、ひととおり作れます。</p>
+
+<!-- ① これは何のツールか -->
+<h2><span class="num">①</span>これは何のツール？</h2>
+<p>写真や図案を下に敷いて、その上を<b>方眼紙のマス目単位で色をぬる</b>ための道具です。<br>
+実際に刺せる形（糸の渡りが長すぎないか）を自動でチェックして、最後に<b>刺し方の記号図をA4で印刷</b>できます。<br>
+ソフトのインストールは要りません。ファイルをダブルクリックするだけで、そのまま開いて使えます。</p>
+
+<!-- ② 基本の流れ -->
+<h2><span class="num">②</span>基本の流れ（この順で作ります）</h2>
+<ol class="steps">
+  <li><b>下絵を読み込む</b>：右上の「⚙ 設定パネル」を開き、「下絵（トレース元）」に写真や図案をドラッグ＆ドロップ（またはファイル選択）します。ネットで見つけた画像もそのまま置けます。</li>
+  <li><b>透かして下に敷く</b>：下絵は薄く透けて表示されます。「透過」のつまみで、ぬりやすい濃さに調整します。</li>
+  <li><b>大きさをマス目に合わせる</b>：「横 ◯目に合わせる」に数字を入れてボタンを押すと、下絵がそのマス数ぴったりの大きさになります（形はゆがみません）。</li>
+  <li><b>ペンでぬる</b>：左の「ペン」を選び、下絵をなぞるようにマス目をぬっていきます。ドラッグで続けてぬれます。</li>
+  <li><b>刺せるかチェック</b>：上の「検証」に <span class="word">float&gt;7</span>（＝糸が長く渡りすぎている所）が出ていないか見ます。0箇所ならOKです。</li>
+  <li><b>A4で印刷</b>：「チャート出力…」を押すと、記号の図（刺し方の設計図）ができます。そのまま印刷、または画像で保存できます。</li>
+</ol>
+<div class="fig">[図: 下絵を敷いてマス目をぬっている画面]</div>
+
+<!-- ③ ツール一覧 -->
+<h2><span class="num">③</span>ツール一覧（左のボタン）</h2>
+<p>キーボードの文字キーでも切り替えられます（例：<kbd>P</kbd> でペン）。</p>
+<table>
+  <thead><tr><th>アイコン</th><th>名前</th><th>キー</th><th>すること</th></tr></thead>
+  <tbody>
+    <tr><td class="ico">✏</td><td>ペン（塗り）</td><td><kbd>P</kbd></td><td>マス目に色をぬる。ドラッグで続けてぬれる（いちばんよく使います）</td></tr>
+    <tr><td class="ico">╱</td><td>斜線（補助）</td><td><kbd>D</kbd></td><td>ななめの階段状に1マスずつぬる補助</td></tr>
+    <tr><td class="ico">⌫</td><td>消しゴム</td><td><kbd>E</kbd></td><td>ぬった色を消す。ドラッグで自由な向きに消せる</td></tr>
+    <tr><td class="ico">▬</td><td>ラン選択</td><td><kbd>R</kbd></td><td><span class="word">ひと続きの糸の渡り</span>（同じ色が横に並んだ1本）を選んで、矢印キーで動かす・パレットで色を変える</td></tr>
+    <tr><td class="ico">⬚</td><td>矩形選択</td><td><kbd>M</kbd></td><td>四角い範囲をドラッグで囲む。まとめてぬる・コピー・くり返し貼り付けに使う</td></tr>
+    <tr><td class="ico">▨</td><td>下絵移動</td><td><kbd>U</kbd></td><td>下に敷いた画像を動かす・ホイールで拡大縮小（ぬった色には影響しません）</td></tr>
+    <tr><td class="ico">✂</td><td>切れ目</td><td><kbd>B</kbd></td><td>同じ色の渡りを、途中で2本に分ける（⑤でくわしく）</td></tr>
+  </tbody>
+</table>
+
+<!-- ④ 便利操作 -->
+<h2><span class="num">④</span>覚えると速い操作</h2>
+<table>
+  <tbody>
+    <tr><td><b>拡大・縮小</b></td><td>マウスの<b>ホイール</b>を回す（カーソルの位置を中心に拡大します）。上の「100%」「全体表示」ボタンでも戻せます</td></tr>
+    <tr><td><b>画面を動かす</b></td><td><kbd>Space</kbd>を押しながらドラッグ、またはマウスの<b>中ボタン</b>ドラッグ</td></tr>
+    <tr><td><b>色をスポイトで拾う</b></td><td><kbd>Alt</kbd>を押しながら、ぬってあるマスをクリック → その色がペンの色になります</td></tr>
+    <tr><td><b>元に戻す / やり直し</b></td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> で1つ戻す、<kbd>Ctrl</kbd>+<kbd>Y</kbd> でやり直し</td></tr>
+    <tr><td><b>やめる・ペンに戻る</b></td><td><kbd>Esc</kbd>：途中の操作（範囲選択など）をやめて、ペンにもどります</td></tr>
+  </tbody>
+</table>
+
+<!-- ⑤ 切れ目機能 -->
+<h2><span class="num">⑤</span>「切れ目」って何に使うの？</h2>
+<div class="card">
+  <h3>同じ色でも、渡りを分けたいとき</h3>
+  <p>糸は1本で長く渡りすぎると刺せません（このツールでは<b>8マス以上の同じ色が横に続く</b>と、赤い <span class="word">float&gt;7</span> の注意が出ます）。<br>
+  そんな時は「切れ目」ツールで、色が続いているマスとマスの<b>境目をクリック</b>します。すると、見た目の色はそのままで、そこで糸が<b>2本に分かれた</b>あつかいになります。</p>
+  <p>たとえば横に8マスの面をぬったら、まん中に切れ目を入れて <b>4マス＋4マス</b> にすれば、赤い注意は消えて刺せる形になります。</p>
+</div>
+<div class="fig">[図: 8マスの面 → まん中に切れ目 → 4＋4に分かれて注意が消える]</div>
+<div class="note">切れ目は、同じ色が続いているマスの境目にしか打てません。もう一度同じ所をクリックすると消えます。</div>
+
+<!-- ⑥ うまくいかない時 -->
+<h2><span class="num">⑥</span>うまくいかない時</h2>
+<dl class="trouble">
+  <dt>「一括塗り」や「連続ペースト」のボタンが押せない・反応しない</dt>
+  <dd>先に <b>「矩形選択」（<kbd>M</kbd>）</b>で範囲を四角く囲んでください。範囲ができていないと、これらのボタンは薄い表示のままです。連続ペーストは <b>範囲を囲む → コピー → 連続ペースト</b> の順です。画面下のメッセージが「次に何をすればいいか」を教えてくれます。</dd>
+
+  <dt>下絵が大きすぎて（小さすぎて）マス目と合わない</dt>
+  <dd>右の設定パネルの <b>「横 ◯目に合わせる」</b>に、下絵を何マス分の幅にしたいか数字を入れてボタンを押すと、一発でそろいます。形はゆがみません。</dd>
+
+  <dt>ぬった線がガタガタ・意図しない所がぬれる</dt>
+  <dd>拡大（ホイール）してマスを大きくしてからぬると、ねらいやすくなります。まちがえたら <kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます。</dd>
+
+  <dt>赤い「float&gt;7」が消えない</dt>
+  <dd>同じ色が横に8マス以上続いています。⑤の「切れ目」で分けるか、色や形を変えてください。赤が残っているあいだは「チャート出力」は押せません。</dd>
+
+  <dt>全部消してやり直したい</dt>
+  <dd>左下の <b>「全消去（クリア）」</b>。確認が出て、消しても <kbd>Ctrl</kbd>+<kbd>Z</kbd> で戻せます。</dd>
+
+  <dt>保存したい／続きをやりたい</dt>
+  <dd>作業は自動で保存され、次に開くと「続きを開きますか？」と聞かれます。手元にファイルで残したい時は上の「JSONで保存」、それを開く時は「JSON読込」です。</dd>
+</dl>
+
+<div class="note">※ 糸の色・布の色・マスの縦横比は、いまはすべて<b>仮の値</b>です。実物の色番号などは後で差し替えます。</div>
+
+<div class="center-cta"><a href="editor.html">エディタを開いて、さわってみる →</a></div>
+
+<footer>
+  こぎんトレース台エディタ／使い方ページ。わからない所や「ここが不便」があれば、遠慮なく教えてください。
+</footer>
+
+</div>
+</body>
+</html>
