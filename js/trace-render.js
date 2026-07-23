@@ -189,6 +189,18 @@
       }
     }
 
+    // ホバーセル（ペン/消しゴムの「今どこに塗る/消すか」・#12）
+    if (view.hoverCell) {
+      var hc = view.hoverCell;
+      if (hc.x >= 0 && hc.x < w && hc.y >= 0 && hc.y < h) {
+        var hx = PAD + hc.x * cw, hy = PAD + hc.y * ch;
+        var hStroke = hc.kind === 'eraser' ? '#E23B3B' : '#FFFFFF';
+        var hFill = hc.kind === 'eraser' ? 'rgba(226,59,59,0.10)' : 'rgba(255,255,255,0.10)';
+        out.push('<rect x="' + hx.toFixed(1) + '" y="' + hy.toFixed(1) + '" width="' + cw + '" height="' + ch +
+          '" fill="' + hFill + '" stroke="' + hStroke + '" stroke-width="1.5" opacity="0.85"/>');
+      }
+    }
+
     // マーキー（矩形選択）
     if (view.marquee) {
       var m = view.marquee;
