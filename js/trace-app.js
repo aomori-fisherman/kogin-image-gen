@@ -13,11 +13,13 @@
   var AUTOSAVE_KEY = 'kogin-trace-autosave-v1';
   // 末尾に break を追加（キー7）。underlay はキー6のまま（TOOLS[5]）。
   var TOOLS = ['pen', 'diag', 'eraser', 'select', 'rect', 'underlay', 'break'];
+  // #12 文字キーのショートカット（P/D/E/R/M/U/B）。数字1〜7も従来どおり有効。
+  var TOOL_KEYS = { p: 'pen', d: 'diag', e: 'eraser', r: 'select', m: 'rect', u: 'underlay', b: 'break' };
   var TOOL_NAMES = { pen: 'ペン（塗り）', diag: '斜線（補助）', eraser: '消しゴム', select: 'ラン選択', rect: '矩形選択', underlay: '下絵移動', break: '切れ目' };
   var TOOL_TIPS = {
-    pen: 'ドラッグで水平ラン。放すと確定。',
-    diag: 'ドラッグで傾き±1の階段（1行1目）。',
-    eraser: 'クリック/ドラッグで自由方向に消去（行ロックなし）。',
+    pen: '［P］ドラッグで連続塗り（自由方向・隙間なし）。Alt+クリックでスポイト。',
+    diag: '［D］ドラッグで傾き±1の階段（1行1目）。',
+    eraser: '［E］ドラッグで自由方向に消去（追従・隙間なし）。',
     select: '同色の渡り1本をクリック選択。矢印で移動/伸縮・パレットで再着色。',
     rect: 'ドラッグで矩形→左の「範囲選択の操作」でコピー/一括塗り/連続ペースト。',
     underlay: 'ドラッグで下絵移動・ホイールで拡縮（cellsには影響しません）。',
@@ -37,6 +39,19 @@
   var drag = null;
   var repeatMode = false, repeatParams = null;
   var autosaveTimer = null;
+  // #12 デザインツール型の操作コア用の状態
+  var spaceDown = false, altDown = false;   // Space=パン / Alt=スポイト の押下状態
+  var pan = null;                            // {sx,sy,sl,st} パンドラッグ中
+  var hoverCell = null;                      // {x,y,kind} ペン/消しゴムのホバーハイライト
+
+  var CURSOR_BY_TOOL = { pen: 'pen', diag: 'pen', eraser: 'eraser', select: 'select', rect: 'rect', underlay: 'underlay', break: 'break' };
+  var MODE_CLASSES = ['mode-pen', 'mode-eraser', 'mode-select', 'mode-rect', 'mode-underlay', 'mode-break', 'mode-pan', 'mode-panning', 'mode-eyedropper'];
+  function setSvgCursor(mode) {
+    var svg = $('trace-svg'); if (!svg || !svg.classList) return;
+    for (var i = 0; i < MODE_CLASSES.length; i++) svg.classList.remove(MODE_CLASSES[i]);
+    svg.classList.add('mode-' + mode);
+  }
+  function toolCursor() { return CURSOR_BY_TOOL[tool] || 'pen'; }
 
   function cur() { return store.current(); }
   function colorObj(id) { for (var i = 0; i < CFG.PALETTE.length; i++) if (CFG.PALETTE[i].id === id) return CFG.PALETTE[i]; return null; }
@@ -61,7 +76,7 @@
     svg.setAttribute('viewBox', built.viewBox); svg.innerHTML = built.innerHTML;
     lastW = built.width; lastH = built.height;
   }
-  function overlays() { return { selection: selection, ghostCells: ghostCells, ghostColor: ghostColor, marquee: marquee }; }
+  function overlays() { return { selection: selection, ghostCells: ghostCells, ghostColor: ghostColor, marquee: marquee, hoverCell: hoverCell }; }
   function renderFull() {
     analyzeNow();
     var ov = overlays(); ov.violations = lastVr.floatViolations; ov.evenRuns = lastVr.evenRuns;
@@ -162,6 +177,101 @@
     setStatus(on ? ('切れ目を追加（行' + y + '・' + (bx - 1) + '↔' + bx + '）') : '切れ目を削除しました');
   }
 
+  // ---- ズーム/パン/スポイト（#12・デザインツール型） ----
+  // client座標 → 分数セル（現在のズーム基準）。カーソル中心ズームの基準点。
+  function clientToWorld(clientX, clientY) {
+    var svg = $('trace-svg'); var rect = svg.getBoundingClientRect();
+    var sx = (clientX - rect.left) * (lastW / (rect.width || lastW || 1));
+    var sy = (clientY - rect.top) * (lastH / (rect.height || lastH || 1));
+    var cw = zoom, ch = zoom * (cur().grid.cellAspect || 1);
+    return { wx: (sx - R.PAD) / cw, wy: (sy - R.PAD) / ch };
+  }
+  // world（分数セル）が client(px) の位置に来るようスクロール＝カーソル固定ズーム。
+  function scrollWorldToClient(wx, wy, clientX, clientY) {
+    var wrap = $('canvas-wrap'); if (!wrap) return;
+    var cw = zoom, ch = zoom * (cur().grid.cellAspect || 1);
+    var sx = R.PAD + wx * cw, sy = R.PAD + wy * ch;
+    var wr = wrap.getBoundingClientRect();
+    wrap.scrollLeft = sx - (clientX - wr.left - (wrap.clientLeft || 0));
+    wrap.scrollTop = sy - (clientY - wr.top - (wrap.clientTop || 0));
+  }
+  function scrollToOrigin() { var wrap = $('canvas-wrap'); if (wrap) { wrap.scrollLeft = 0; wrap.scrollTop = 0; } }
+  // ズーム設定。cx,cy を渡すとその client点を固定してズーム（ホイール用）。
+  function setZoom(z, cx, cy) {
+    var before = (cx != null && cy != null) ? clientToWorld(cx, cy) : null;
+    var nz = clamp(Math.round(z), CFG.zoom.min, CFG.zoom.max);
+    if (nz === zoom && before) return;   // 端で無変化なら何もしない
+    zoom = nz;
+    renderFull(); syncGridControls();
+    if (before) scrollWorldToClient(before.wx, before.wy, cx, cy);
+  }
+  function zoomBy(dir, cx, cy) {
+    var f = dir > 0 ? 1.15 : 1 / 1.15;
+    var target = zoom * f;
+    target = dir > 0 ? Math.max(target, zoom + 1) : Math.min(target, zoom - 1); // 端付近でも必ず1目動く
+    setZoom(target, cx, cy);
+  }
+  function zoomReset100() { setZoom(CFG.zoom.init); scrollToOrigin(); }
+  function zoomFit() {
+    var wrap = $('canvas-wrap'); var g = cur().grid;
+    if (!wrap || !wrap.clientWidth) { setZoom(CFG.zoom.init); return; }
+    var availW = wrap.clientWidth - R.PAD * 2 - 6;
+    var availH = wrap.clientHeight - R.PAD * 2 - 6;
+    var zw = availW / g.w, zh = availH / (g.h * (g.cellAspect || 1));
+    setZoom(Math.floor(Math.min(zw, zh)));
+    scrollToOrigin();
+  }
+  // パン（Space+ドラッグ / 中ボタンドラッグ）＝どのツールでも効く。
+  function startPan(e) {
+    var wrap = $('canvas-wrap');
+    pan = { sx: e.clientX, sy: e.clientY, sl: wrap ? wrap.scrollLeft : 0, st: wrap ? wrap.scrollTop : 0 };
+    setSvgCursor('panning');
+  }
+  function doPan(e) {
+    var wrap = $('canvas-wrap'); if (!wrap) return;
+    wrap.scrollLeft = pan.sl - (e.clientX - pan.sx);
+    wrap.scrollTop = pan.st - (e.clientY - pan.sy);
+  }
+  // スポイト（Alt+クリック）: 塗られたマスの色をペン色に取得。常に handled 扱い（塗らせない）。
+  function pickColorAt(x, y) {
+    if (x < 0 || y < 0 || x >= cur().grid.w || y >= cur().grid.h) return;
+    var id = cur().cells[y][x];
+    if (id == null) { setStatus('スポイト: 空マスです（塗られたマスを Alt+クリック）'); return; }
+    setActiveColor(id);
+    var o = colorObj(id); setStatus('スポイト: ' + (o ? o.name : id) + ' を取得しました');
+  }
+
+  // ---- 連続塗り/消し（ドラッグ追従・線分補間・#12） ----
+  function paintCell(x, y, d) {
+    if (x < 0 || y < 0 || x >= cur().grid.w || y >= cur().grid.h) return;
+    var k = x + ',' + y; if (d.done[k]) return; d.done[k] = 1;   // 同一セル重複塗り抑止
+    cur().cells[y][x] = activeColor;
+    if (y !== d.y0) d.singleRow = false;
+    else { if (x < d.minX) d.minX = x; if (x > d.maxX) d.maxX = x; }
+  }
+  function eraseCell(x, y, d) {
+    if (x < 0 || y < 0 || x >= cur().grid.w || y >= cur().grid.h) return;
+    var k = x + ',' + y; if (d.done[k]) return; d.done[k] = 1;
+    S.eraseRange(cur().cells, y, x, x, cur().breaks);
+  }
+  // 単一行の連続塗りにだけ奇数スナップを適用（端を±1調整）。多行ストロークには不適用。
+  function applyOddSnapToStroke(d) {
+    var y = d.y0, lo = d.minX, hi = d.maxX, row = cur().cells[y];
+    var dir = (d.lastX - d.x0) >= 0 ? 1 : -1;
+    var sn = S.oddSnapLen(lo, hi, dir, cur().grid.w, CFG.floatMax);
+    if (sn[0] < lo) row[sn[0]] = activeColor; else if (sn[0] > lo) row[lo] = null;
+    if (sn[1] > hi) row[sn[1]] = activeColor; else if (sn[1] < hi) row[hi] = null;
+  }
+  // ホバーハイライト（ペン/消しゴムのみ・「今どこに塗る/消すか」を可視化）。
+  function updateHover(e) {
+    if (tool !== 'pen' && tool !== 'eraser') { if (hoverCell) { hoverCell = null; schedulePreview(); } return; }
+    var c = svgCell(e);
+    if (c.x < 0 || c.y < 0 || c.x >= cur().grid.w || c.y >= cur().grid.h) { if (hoverCell) { hoverCell = null; schedulePreview(); } return; }
+    if (!hoverCell || hoverCell.x !== c.x || hoverCell.y !== c.y || hoverCell.kind !== tool) {
+      hoverCell = { x: c.x, y: c.y, kind: tool }; schedulePreview();
+    }
+  }
+
   // ---- ペン ゴースト ----
   function penRange() {
     var lo = Math.min(drag.x1, drag.x2), hi = Math.max(drag.x1, drag.x2);
@@ -186,24 +296,48 @@
 
   // ---- マウス ----
   function onMouseDown(e) {
+    // パン（中ボタン or Space）＝どのツールでも最優先
+    if (e.button === 1 || spaceDown) { startPan(e); return; }
+    // スポイト（Alt+クリック）＝塗られたマスの色を取得（塗らない）
+    if (e.altKey) { var pc = svgCell(e); pickColorAt(pc.x, pc.y); return; }
     if (repeatMode) { var c0 = svgCell(e); var wri = S.repeatPaste(cur().cells, clip, c0.x, c0.y, repeatParams.nx, repeatParams.ny, repeatParams.gx, repeatParams.gy); store.commit('repeat'); repeatMode = false; ghostCells = null; renderFull(); scheduleAutosave(); setStatus('連続ペースト: ' + wri + '目を配置'); return; }
     if (tool === 'break') { var b = svgBoundary(e); toggleBreakAt(b.bx, b.y); return; }
     var c = svgCell(e);
     if (c.x < 0 || c.y < 0 || c.x >= cur().grid.w || c.y >= cur().grid.h) { if (tool !== 'underlay') return; }
-    if (tool === 'pen') { drag = { mode: 'pen', y: clampY(c.y), x1: clampX(c.x), x2: clampX(c.x) }; setPenGhost(); schedulePreview(); }
+    hoverCell = null;
+    if (tool === 'pen') {
+      var px = clampX(c.x), py = clampY(c.y);
+      drag = { mode: 'pen', done: {}, lastX: px, lastY: py, x0: px, y0: py, minX: px, maxX: px, singleRow: true };
+      paintCell(px, py, drag); scheduleFull();
+    }
     else if (tool === 'diag') { drag = { mode: 'diag', x0: clampX(c.x), y0: clampY(c.y), dx: 0, dy: 0 }; setDiagGhost(); schedulePreview(); }
-    else if (tool === 'eraser') { drag = { mode: 'eraser' }; S.eraseRange(cur().cells, clampY(c.y), clampX(c.x), clampX(c.x), cur().breaks); scheduleFull(); }
+    else if (tool === 'eraser') {
+      var ex = clampX(c.x), ey = clampY(c.y);
+      drag = { mode: 'eraser', done: {}, lastX: ex, lastY: ey };
+      eraseCell(ex, ey, drag); scheduleFull();
+    }
     else if (tool === 'select') { selection = S.runAt(cur().cells, clampX(c.x), clampY(c.y), S.breaksRowOf(cur().breaks, clampY(c.y))); renderFull(); }
     else if (tool === 'rect') { drag = { mode: 'rect' }; marquee = { x0: clampX(c.x), y0: clampY(c.y), x1: clampX(c.x), y1: clampY(c.y) }; rectSel = null; schedulePreview(); }
     else if (tool === 'underlay') { if (cur().underlay) drag = { mode: 'underlay', sx: e.clientX, sy: e.clientY, ox: cur().underlay.x, oy: cur().underlay.y }; }
   }
   function onMouseMove(e) {
+    if (pan) { doPan(e); return; }
     if (repeatMode) { var cc = svgCell(e); ghostCells = repeatGhost(cc.x, cc.y); ghostColor = '#E3A93D'; schedulePreview(); return; }
-    if (!drag) return;
+    if (!drag) { updateHover(e); return; }
     var c = svgCell(e);
-    if (drag.mode === 'pen') { drag.x2 = clampX(c.x); setPenGhost(); schedulePreview(); }
+    if (drag.mode === 'pen') {
+      var nx = clampX(c.x), ny = clampY(c.y);
+      var line = S.lineCells(drag.lastX, drag.lastY, nx, ny);   // 隙間なし補間
+      for (var i = 0; i < line.length; i++) paintCell(line[i].x, line[i].y, drag);
+      drag.lastX = nx; drag.lastY = ny; scheduleFull();
+    }
     else if (drag.mode === 'diag') { drag.dx = clampX(c.x) - drag.x0; drag.dy = clampY(c.y) - drag.y0; setDiagGhost(); schedulePreview(); }
-    else if (drag.mode === 'eraser') { S.eraseRange(cur().cells, clampY(c.y), clampX(c.x), clampX(c.x), cur().breaks); scheduleFull(); }
+    else if (drag.mode === 'eraser') {
+      var eex = clampX(c.x), eey = clampY(c.y);
+      var line2 = S.lineCells(drag.lastX, drag.lastY, eex, eey);
+      for (var j = 0; j < line2.length; j++) eraseCell(line2[j].x, line2[j].y, drag);
+      drag.lastX = eex; drag.lastY = eey; scheduleFull();
+    }
     else if (drag.mode === 'rect') { marquee.x1 = clampX(c.x); marquee.y1 = clampY(c.y); schedulePreview(); }
     else if (drag.mode === 'underlay') {
       var svg = $('trace-svg'); var rect = svg.getBoundingClientRect();
@@ -212,15 +346,21 @@
     }
   }
   function onMouseUp() {
+    if (pan) { pan = null; setSvgCursor(spaceDown ? 'pan' : toolCursor()); return; }
     if (!drag) return;
-    if (drag.mode === 'pen') { var r = penRange(); S.paintRun(cur().cells, drag.y, r[0], r[1], activeColor); store.commit('pen'); ghostCells = null; drag = null; renderFull(); scheduleAutosave(); }
+    if (drag.mode === 'pen') { if (oddSnap && drag.singleRow) applyOddSnapToStroke(drag); store.commit('pen'); ghostCells = null; drag = null; renderFull(); scheduleAutosave(); }
     else if (drag.mode === 'diag') { var cs = S.diagonalCells(drag.x0, drag.y0, drag.dx, drag.dy); for (var i = 0; i < cs.length; i++) { var p = cs[i]; if (p.x >= 0 && p.x < cur().grid.w && p.y >= 0 && p.y < cur().grid.h) cur().cells[p.y][p.x] = activeColor; } store.commit('diag'); ghostCells = null; drag = null; renderFull(); scheduleAutosave(); }
     else if (drag.mode === 'eraser') { store.commit('erase'); drag = null; renderFull(); scheduleAutosave(); }
     else if (drag.mode === 'rect') { var lo = Math.min(marquee.x0, marquee.x1), hi = Math.max(marquee.x0, marquee.x1), tp = Math.min(marquee.y0, marquee.y1), bt = Math.max(marquee.y0, marquee.y1); rectSel = { x: lo, y: tp, w: hi - lo + 1, h: bt - tp + 1 }; drag = null; renderFull(); setStatus('範囲: ' + rectSel.w + '×' + rectSel.h + '目'); }
     else if (drag.mode === 'underlay') { drag = null; scheduleAutosave(); }
   }
   function onWheel(e) {
-    if (tool === 'underlay' && cur().underlay) { e.preventDefault(); var f = e.deltaY < 0 ? 1.1 : 1 / 1.1; cur().underlay.scale = clamp(cur().underlay.scale * f, 0.1, 10); renderPreview(); scheduleAutosave(); }
+    // 下絵移動ツール選択中（かつSpace非押下）＝ホイールで下絵拡縮（従来）。分離して衝突回避。
+    if (tool === 'underlay' && cur().underlay && !spaceDown) {
+      e.preventDefault(); var f = e.deltaY < 0 ? 1.1 : 1 / 1.1; cur().underlay.scale = clamp(cur().underlay.scale * f, 0.1, 10); renderPreview(); scheduleAutosave(); return;
+    }
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY);   // カーソル位置中心ズーム
   }
 
   // ---- 選択ツール キーボード ----
@@ -250,13 +390,25 @@
   function onKey(e) {
     var t = e.target, tag = (t && t.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') { if (e.key === 'Escape' && t.blur) t.blur(); return; }
+    // Space=パン押下状態（ページスクロール抑止）
+    if (e.key === ' ' || e.code === 'Space') { if (!spaceDown) { spaceDown = true; if (!pan && !drag) setSvgCursor('pan'); } e.preventDefault(); return; }
+    // Alt=スポイト（カーソルヒントのみ・機能は mousedown の altKey で判定）
+    if (e.key === 'Alt') { if (!altDown) { altDown = true; if (!pan && !drag) setSvgCursor('eyedropper'); } return; }
+    // Esc=進行中の操作（矩形選択・連続ペースト・切れ目・パン・選択）をキャンセルして既定ツールへ（#12）
     if (e.key === 'Escape') {
-      if (repeatMode) { repeatMode = false; ghostCells = null; renderFull(); }
-      else if (marquee) { marquee = null; rectSel = null; renderFull(); }
-      else if (selection) { selection = null; renderFull(); }
+      pan = null; drag = null; ghostCells = null; repeatMode = false; marquee = null; rectSel = null; selection = null; hoverCell = null;
+      if ($('repeat-form')) $('repeat-form').classList.add('hidden');
+      var def = CFG.defaultTool || 'pen';
+      if (tool !== def) setTool(def); else setSvgCursor(toolCursor());
+      renderFull();
       return;
     }
-    if (!e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '7') { var ti = +e.key - 1; if (TOOLS[ti]) setTool(TOOLS[ti]); e.preventDefault(); return; }
+    // ツールショートカット: 文字キー（P/D/E/R/M/U/B）と数字1〜7
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      var kl = (e.key || '').toLowerCase();
+      if (TOOL_KEYS[kl]) { setTool(TOOL_KEYS[kl]); e.preventDefault(); return; }
+      if (e.key >= '1' && e.key <= '7') { var ti = +e.key - 1; if (TOOLS[ti]) setTool(TOOLS[ti]); e.preventDefault(); return; }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { doUndo(); e.preventDefault(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { doRedo(); e.preventDefault(); return; }
     if (tool === 'select' && selection) {
@@ -273,16 +425,23 @@
     }
   }
 
+  // Space/Alt の解放（押下状態とカーソルを戻す）。
+  function onKeyUp(e) {
+    if (e.key === ' ' || e.code === 'Space') { spaceDown = false; if (!pan && !drag) setSvgCursor(altDown ? 'eyedropper' : toolCursor()); }
+    else if (e.key === 'Alt') { altDown = false; if (!pan && !drag) setSvgCursor(spaceDown ? 'pan' : toolCursor()); }
+  }
+
   function doUndo() { if (store.undo()) { selection = null; renderFull(); scheduleAutosave(); } }
   function doRedo() { if (store.redo()) { selection = null; renderFull(); scheduleAutosave(); } }
 
   // ---- ツール・パレット ----
   function setTool(t) {
-    tool = t; drag = null; ghostCells = null;
+    tool = t; drag = null; ghostCells = null; hoverCell = null;
     if (t !== 'select') selection = selection; // 選択は保持
     for (var i = 0; i < TOOLS.length; i++) { var b = $('tool-' + TOOLS[i]); if (b) b.classList.toggle('active', TOOLS[i] === t); }
     if ($('cur-tool-name')) $('cur-tool-name').textContent = TOOL_NAMES[t] || t;
     if ($('tool-tip')) $('tool-tip').textContent = TOOL_TIPS[t] || '';
+    setSvgCursor(spaceDown ? 'pan' : (altDown ? 'eyedropper' : (CURSOR_BY_TOOL[t] || 'pen')));
     renderPreview();
   }
   function setActiveColor(id) {
@@ -411,15 +570,19 @@
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     svg.addEventListener('wheel', onWheel, { passive: false });
+    svg.addEventListener('mouseleave', function () { if (hoverCell) { hoverCell = null; schedulePreview(); } });
+    svg.addEventListener('contextmenu', function (e) { if (spaceDown) e.preventDefault(); }); // Space中の右クリックメニュー抑止
   }
-  function bindKeyboard() { document.addEventListener('keydown', onKey); }
+  function bindKeyboard() { document.addEventListener('keydown', onKey); document.addEventListener('keyup', onKeyUp); }
   function on(id, ev, fn) { var el = $(id); if (el) el.addEventListener(ev, fn); }
   function bindControls() {
     for (var i = 0; i < TOOLS.length; i++) (function (t) { on('tool-' + t, 'click', function () { setTool(t); }); })(TOOLS[i]);
     on('btn-undo', 'click', doUndo); on('btn-redo', 'click', doRedo);
     on('chk-oddsnap', 'change', function () { oddSnap = this.checked; });
-    on('btn-zoom-in', 'click', function () { zoom = clamp(zoom + 2, CFG.zoom.min, CFG.zoom.max); syncGridControls(); renderFull(); });
-    on('btn-zoom-out', 'click', function () { zoom = clamp(zoom - 2, CFG.zoom.min, CFG.zoom.max); syncGridControls(); renderFull(); });
+    on('btn-zoom-in', 'click', function () { setZoom(zoom + 2); });
+    on('btn-zoom-out', 'click', function () { setZoom(zoom - 2); });
+    on('btn-zoom-100', 'click', zoomReset100);
+    on('btn-zoom-fit', 'click', zoomFit);
     on('grid-w', 'change', function () { applyResize(parseInt(this.value, 10), cur().grid.h); });
     on('grid-h', 'change', function () { applyResize(cur().grid.w, parseInt(this.value, 10)); });
     on('cell-aspect', 'input', function () { if ($('aspect-val')) $('aspect-val').textContent = Number(this.value).toFixed(2); });
@@ -499,6 +662,13 @@
       setTool: setTool, getTool: function () { return tool; },
       setOddSnap: function (b) { oddSnap = b; if ($('chk-oddsnap')) $('chk-oddsnap').checked = b; },
       setActiveColor: setActiveColor,
+      // #12 テスト用: ズーム/スポイト/ホバー/パンの観測
+      getZoom: function () { return zoom; },
+      zoomFit: zoomFit, zoomReset100: zoomReset100,
+      activeColorId: function () { return activeColor; },
+      hoverCell: function () { return hoverCell; },
+      isPanning: function () { return !!pan; },
+      cellAt: function (x, y) { var g = cur().grid; return (x < 0 || y < 0 || x >= g.w || y >= g.h) ? null : cur().cells[y][x]; },
       undo: doUndo, redo: doRedo,
       svg: function () { return $('trace-svg'); },
       cellClientPoint: function (cx, cy) {

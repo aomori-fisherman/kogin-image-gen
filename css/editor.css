@@ -114,8 +114,20 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .ws-canvas { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; min-width: 0; }
 .canvas-toolbar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
 .canvas-toolbar .spacer { flex: 1; }
+.canvas-toolbar .op-hint { font-size: 10px; color: var(--text-dim); opacity: .7; }
+@media (max-width: 1100px) { .canvas-toolbar .op-hint { display: none; } }
 .canvas-wrap { overflow: auto; max-height: calc(100vh - 210px); border: 1px solid var(--line); border-radius: 8px; background: #0e1116; }
 #trace-svg { display: block; touch-action: none; cursor: crosshair; }
+/* ---- ツール別カーソル（#12・デザインツール型の操作連動） ---- */
+#trace-svg.mode-pen { cursor: crosshair; }
+#trace-svg.mode-eraser { cursor: cell; }
+#trace-svg.mode-select { cursor: pointer; }
+#trace-svg.mode-rect { cursor: crosshair; }
+#trace-svg.mode-underlay { cursor: move; }
+#trace-svg.mode-break { cursor: col-resize; }
+#trace-svg.mode-pan { cursor: grab; }
+#trace-svg.mode-panning { cursor: grabbing; }
+#trace-svg.mode-eyedropper { cursor: copy; }
 .canvas-status { font-size: 11px; color: var(--text-dim); margin-top: 6px; min-height: 16px; }
 
 /* ---- 検証 badge / percolor ---- */
