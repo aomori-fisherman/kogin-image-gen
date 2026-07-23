@@ -67,10 +67,15 @@
     out.push('<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="' + fab.hex + '"/>');
 
     // 下絵（グリッドの下・cells の下）
-    if (doc.underlay && doc.underlay.dataURL) {
+    // #13 ズーム一体化: ジオメトリ(x/y/scale)は zoom非依存の world単位で保持し、描画時に係数
+    //   uf=zoom/ZREF で一律スケール（グリッドと同率・同中心で拡縮＝相対位置/スケールが固定）。
+    //   uf 省略時は 1（後方互換・zoom=ZREF と同じ描画）。
+    // #14 表示トグル: view.hideUnderlay が真なら描画をスキップ（データは doc に保持）。
+    if (doc.underlay && doc.underlay.dataURL && !view.hideUnderlay) {
       var u = doc.underlay;
-      var dw = (u.w || 0) * (u.scale || 1), dh = (u.h || 0) * (u.scale || 1);
-      var ux = PAD + (u.x || 0), uy = PAD + (u.y || 0);
+      var uf = (view.uf != null) ? view.uf : 1;
+      var dw = (u.w || 0) * (u.scale || 1) * uf, dh = (u.h || 0) * (u.scale || 1) * uf;
+      var ux = PAD + (u.x || 0) * uf, uy = PAD + (u.y || 0) * uf;
       var cx = ux + dw / 2, cy = uy + dh / 2;
       var filt = u.grayscale ? 'filter:grayscale(1);' : '';
       out.push('<image href="' + u.dataURL + '" x="' + ux + '" y="' + uy + '" width="' + dw + '" height="' + dh +

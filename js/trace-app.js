@@ -43,6 +43,11 @@
   var spaceDown = false, altDown = false;   // Space=パン / Alt=スポイト の押下状態
   var pan = null;                            // {sx,sy,sl,st} パンドラッグ中
   var hoverCell = null;                      // {x,y,kind} ペン/消しゴムのホバーハイライト
+  var underlayVisible = true;                // #14 下絵の表示ON/OFF（非表示でもデータは保持）
+
+  // #13 下絵は zoom非依存の world単位で保持し、描画時に uf=zoom/ZREF で一律スケールしてグリッドと一体化する。
+  function zref() { return CFG.zoom.init || 10; }
+  function ufactor() { return zoom / zref(); }
 
   var CURSOR_BY_TOOL = { pen: 'pen', diag: 'pen', eraser: 'eraser', select: 'select', rect: 'rect', underlay: 'underlay', break: 'break' };
   var MODE_CLASSES = ['mode-pen', 'mode-eraser', 'mode-select', 'mode-rect', 'mode-underlay', 'mode-break', 'mode-pan', 'mode-panning', 'mode-eyedropper'];
@@ -65,7 +70,7 @@
   // ---- 描画 ----
   function view(extra) {
     var cellW = zoom, cellH = zoom * (cur().grid.cellAspect || 1);
-    var v = { cellW: cellW, cellH: cellH, showGrid: showGrid, show5: show5, showCenter: showCenter, gridOpacity: gridOpacity, palette: CFG.PALETTE, fabrics: CFG.FABRICS };
+    var v = { cellW: cellW, cellH: cellH, uf: ufactor(), hideUnderlay: !underlayVisible, showGrid: showGrid, show5: show5, showCenter: showCenter, gridOpacity: gridOpacity, palette: CFG.PALETTE, fabrics: CFG.FABRICS };
     if (extra) for (var k in extra) v[k] = extra[k];
     return v;
   }
@@ -342,7 +347,8 @@
     else if (drag.mode === 'underlay') {
       var svg = $('trace-svg'); var rect = svg.getBoundingClientRect();
       var dx = (e.clientX - drag.sx) * (lastW / rect.width), dy = (e.clientY - drag.sy) * (lastH / rect.height);
-      cur().underlay.x = drag.ox + dx; cur().underlay.y = drag.oy + dy; schedulePreview();
+      var uf = ufactor();   // #13 world単位で保持＝画面移動量(px)を uf で割って world量へ戻す
+      cur().underlay.x = drag.ox + dx / uf; cur().underlay.y = drag.oy + dy / uf; schedulePreview();
     }
   }
   function onMouseUp() {
@@ -406,6 +412,7 @@
     // ツールショートカット: 文字キー（P/D/E/R/M/U/B）と数字1〜7
     if (!e.ctrlKey && !e.metaKey && !e.altKey) {
       var kl = (e.key || '').toLowerCase();
+      if (kl === 'h') { toggleUnderlayVisible(); e.preventDefault(); return; }   // #14 下絵の表示ON/OFF
       if (TOOL_KEYS[kl]) { setTool(TOOL_KEYS[kl]); e.preventDefault(); return; }
       if (e.key >= '1' && e.key <= '7') { var ti = +e.key - 1; if (TOOLS[ti]) setTool(TOOLS[ti]); e.preventDefault(); return; }
     }
@@ -489,6 +496,8 @@
     var g = cur().grid;
     if ($('grid-w')) $('grid-w').value = g.w;
     if ($('grid-h')) $('grid-h').value = g.h;
+    if ($('grid-w-top')) $('grid-w-top').value = g.w;   // #16 上部リボンの数値入力と同期
+    if ($('grid-h-top')) $('grid-h-top').value = g.h;
     if ($('cell-aspect')) $('cell-aspect').value = g.cellAspect;
     if ($('aspect-val')) $('aspect-val').textContent = Number(g.cellAspect).toFixed(2);
     if ($('zoom-val')) $('zoom-val').textContent = zoom;
@@ -499,9 +508,10 @@
   // ---- 下絵 ----
   function centerUnderlay() {
     var u = cur().underlay; if (!u) return;
-    var cellW = zoom, cellH = zoom * cur().grid.cellAspect;
-    u.x = (cur().grid.w * cellW) / 2 - (u.w * u.scale) / 2;
-    u.y = (cur().grid.h * cellH) / 2 - (u.h * u.scale) / 2;
+    // #13 world単位（zoom非依存・ZREF基準）で中央寄せ。どのズームでも下絵中心＝グリッド中心が一致。
+    var ZR = zref(), asp = cur().grid.cellAspect || 1;
+    u.x = (cur().grid.w * ZR) / 2 - (u.w * u.scale) / 2;
+    u.y = (cur().grid.h * asp * ZR) / 2 - (u.h * u.scale) / 2;
   }
   function setUnderlay(canvas, w, h) {
     var op = $('underlay-opacity') ? ($('underlay-opacity').value / 100) : 0.5;
@@ -516,16 +526,47 @@
     var url = SAMPLE.makeSampleDataUrl(400); var cv = document.createElement('canvas');
     IL.loadUrlToCanvas(url, cv, 480).then(function (r) { setUnderlay(cv, r.width, r.height); }).catch(function (e) { alert('サンプル読込失敗: ' + e.message); });
   }
+  // #15 キャンバス板そのものへ画像D&Dで下絵投入（右パネルのドロップゾーン/ファイル選択は併存）。
+  // D&D中は「ここにドロップで下絵を読み込み」オーバーレイ(#canvas-dnd-hint)を表示する。
+  function dndHasFiles(e) {
+    var t = e.dataTransfer && e.dataTransfer.types; if (!t) return false;
+    for (var i = 0; i < t.length; i++) if (t[i] === 'Files') return true;
+    return false;
+  }
+  function wireCanvasDnd() {
+    var zone = $('ws-canvas'), hint = $('canvas-dnd-hint');
+    if (!zone) return;
+    function show() { if (hint) hint.classList.remove('hidden'); }
+    function hide() { if (hint) hint.classList.add('hidden'); }
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) { if (!dndHasFiles(e)) return; e.preventDefault(); e.stopPropagation(); show(); });
+    });
+    zone.addEventListener('dragleave', hide);
+    zone.addEventListener('dragend', hide);
+    zone.addEventListener('drop', function (e) {
+      e.preventDefault(); e.stopPropagation(); hide();
+      var dt = e.dataTransfer; if (dt && dt.files && dt.files.length) loadUnderlayFile(dt.files[0]);
+    });
+  }
   // #2 下絵をマス目指定で一発フィット。scale = (N × cellPx) / underlay寸法。
   // 単一スケール（縦横比は常に維持）。axis='w' は横N目・'h' は縦N目基準。
   function fitUnderlay(n, axis) {
     var u = cur().underlay; if (!u) { setStatus('先に下絵を読み込んでください'); return; }
     n = clamp(Math.round(n) || 1, 1, 200);
-    var cellW = zoom, cellH = zoom * (cur().grid.cellAspect || 1);
-    if (axis === 'h') u.scale = (n * cellH) / u.h; else u.scale = (n * cellW) / u.w;
+    // #13 world単位（ZREF基準）でスケール算出＝現在ズームに依存しない（ズームは描画時 uf で反映）。
+    var ZR = zref(), asp = cur().grid.cellAspect || 1;
+    if (axis === 'h') u.scale = (n * asp * ZR) / u.h; else u.scale = (n * ZR) / u.w;
     centerUnderlay(); renderFull(); scheduleAutosave();
     setStatus('下絵を' + (axis === 'h' ? '縦' : '横') + n + '目に合わせました（縦横比維持）');
   }
+  // #14 下絵の表示ON/OFF（H キー / リボンのチェックボックス）。非表示でも underlay データは保持。
+  function setUnderlayVisible(v) {
+    underlayVisible = !!v;
+    if ($('chk-underlay')) $('chk-underlay').checked = underlayVisible;
+    renderFull();
+    if (cur().underlay) setStatus(underlayVisible ? '下絵を表示しました' : '下絵を非表示にしました（データは保持・H で戻す）');
+  }
+  function toggleUnderlayVisible() { setUnderlayVisible(!underlayVisible); }
   // #9(b) 全消去（確認ダイアログ付き）。cells 全 null＋breaks クリア。undoで戻せる。
   function clearAll() {
     var vr = lastVr || analyzeNow();
@@ -590,6 +631,11 @@
     on('chk-grid', 'change', function () { showGrid = this.checked; renderFull(); });
     on('chk-5', 'change', function () { show5 = this.checked; renderFull(); });
     on('chk-center', 'change', function () { showCenter = this.checked; renderFull(); });
+    on('chk-underlay', 'change', function () { setUnderlayVisible(this.checked); });   // #14 下絵の表示ON/OFF
+    // #16 マス目数の数値設定（上部リボン・右パネルの grid-w/grid-h と併存・双方向同期）
+    on('btn-grid-apply', 'click', function () { applyResize(clampInput('grid-w-top', 3, 200), clampInput('grid-h-top', 3, 200)); });
+    on('grid-w-top', 'change', function () { applyResize(clampInput('grid-w-top', 3, 200), cur().grid.h); });
+    on('grid-h-top', 'change', function () { applyResize(cur().grid.w, clampInput('grid-h-top', 3, 200)); });
     on('grid-opacity', 'input', function () { gridOpacity = this.value / 100; if ($('gridop-val')) $('gridop-val').textContent = this.value + '%'; renderFull(); });
     // 下絵
     if ($('underlay-dz') && IL) IL.wireDropzone($('underlay-dz'), loadUnderlayFile);
@@ -654,7 +700,7 @@
   // ---- テスト用API ----
   function exposeTestApi() {
     window.TraceApp = {
-      reset: function (w, h) { store.replace(S.newDoc(w, h)); selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; setActiveColor(activeColor); syncGridControls(); renderFull(); },
+      reset: function (w, h) { store.replace(S.newDoc(w, h)); selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; underlayVisible = true; setActiveColor(activeColor); syncGridControls(); renderFull(); },
       getDoc: function () { return cur(); },
       getVr: function () { return lastVr; },
       cellCount: function () { return lastVr ? lastVr.cellCount : 0; },
@@ -664,7 +710,21 @@
       setActiveColor: setActiveColor,
       // #12 テスト用: ズーム/スポイト/ホバー/パンの観測
       getZoom: function () { return zoom; },
+      setZoom: function (z) { setZoom(z); },
       zoomFit: zoomFit, zoomReset100: zoomReset100,
+      // #13/#14 テスト用: 下絵ジオメトリ（実描画された <image> の px）と表示トグルの観測
+      underlayVisible: function () { return underlayVisible; },
+      setUnderlayVisible: setUnderlayVisible,
+      setUnderlayTest: function (w, h, scale) {
+        underlayVisible = true;
+        cur().underlay = { dataURL: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', x: 0, y: 0, scale: scale || 1, rotateDeg: 0, opacity: 0.5, grayscale: false, w: w, h: h };
+        centerUnderlay(); renderFull();
+      },
+      underlayRenderedPx: function () {
+        var svg = $('trace-svg'); var img = svg && svg.querySelector('image');
+        if (!img) return null;
+        return { x: +img.getAttribute('x'), y: +img.getAttribute('y'), w: +img.getAttribute('width'), h: +img.getAttribute('height') };
+      },
       activeColorId: function () { return activeColor; },
       hoverCell: function () { return hoverCell; },
       isPanning: function () { return !!pan; },
@@ -704,7 +764,7 @@
     try { var saved = localStorage.getItem(AUTOSAVE_KEY); if (saved && window.confirm('前回の続きを開きますか？（キャンセルで新規）')) start = S.deserialize(saved); } catch (e) { start = null; }
     if (!start) { var p = CFG.PRESETS.filter(function (x) { return x.id === 'meishiire'; })[0] || CFG.PRESETS[0]; start = S.newDoc(p.w || 80, p.h || 100); }
     store = S.DocStore(start);
-    buildPalette(); buildFabricSelect(); buildPresetSelect(); bindControls(); bindCanvas(); bindKeyboard();
+    buildPalette(); buildFabricSelect(); buildPresetSelect(); bindControls(); bindCanvas(); bindKeyboard(); wireCanvasDnd();
     setTool(tool); setActiveColor(activeColor); syncGridControls();
     renderFull(); setStatus('準備完了（すべて仮値・実測後に差し替え）');
     exposeTestApi();
