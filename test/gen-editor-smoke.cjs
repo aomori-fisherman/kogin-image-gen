@@ -173,6 +173,55 @@ function runSmoke() {
     TraceApp.setTool('select'); mm(4, 2);
     checks.r_hover_cleared_nonpaint = TraceApp.hoverCell() === null;
 
+    // ===== #13 ズームと下絵の一体化（R3・最優先） =====
+    // 実描画された下絵<image>のpxをセル単位へ換算し、ズーム変更で下絵-グリッドの
+    // 相対位置(left/top)・相対スケール(w/h)が不変（1pxもずれない）ことを数値検証。
+    TraceApp.reset(40, 30); TraceApp.zoomReset100();      // zoom=init(10)
+    TraceApp.setUnderlayTest(200, 120, 1);                // 下絵注入＋中央寄せ
+    checks.s13_underlay_rendered = !!TraceApp.underlayRenderedPx();
+    function ucellbox() {
+      var u = TraceApp.underlayRenderedPx(); if (!u) return null;
+      var PAD = TraceRender.PAD, z = TraceApp.getZoom(), asp = TraceApp.getDoc().grid.cellAspect;
+      return { left: (u.x - PAD) / z, top: (u.y - PAD) / (z * asp), w: u.w / z, h: u.h / (z * asp) };
+    }
+    var ub1 = ucellbox();                                 // zoom=10 での下絵ボックス（セル単位）
+    TraceApp.setZoom(22);
+    var ub2 = ucellbox();                                 // zoom=22 での下絵ボックス（セル単位）
+    function near(a, b) { return Math.abs(a - b) < 0.02; }
+    checks.s13_left_fixed = near(ub1.left, ub2.left);
+    checks.s13_top_fixed = near(ub1.top, ub2.top);
+    checks.s13_w_fixed = near(ub1.w, ub2.w);
+    checks.s13_h_fixed = near(ub1.h, ub2.h);
+
+    // ===== #14 下絵の表示ON/OFF（H キー・データ保持） =====
+    TraceApp.reset(20, 10); TraceApp.zoomReset100(); TraceApp.setUnderlayTest(100, 60, 1);
+    checks.s14_visible_default = TraceApp.underlayVisible() === true && !!TraceApp.underlayRenderedPx();
+    key('h');                                             // 非表示へ
+    checks.s14_hidden_after_h = TraceApp.underlayVisible() === false && TraceApp.underlayRenderedPx() === null;
+    checks.s14_data_kept = !!TraceApp.getDoc().underlay;  // データ・位置・スケールは保持
+    key('h');                                             // 再表示
+    checks.s14_reshow = TraceApp.underlayVisible() === true && !!TraceApp.underlayRenderedPx();
+
+    // ===== #15 キャンバス直接D&D（オーバーレイ＋ハンドラ存在） =====
+    TraceApp.reset(20, 10);
+    checks.s15_hint_exists = !!$('canvas-dnd-hint');
+    checks.s15_hint_hidden_default = $('canvas-dnd-hint').classList.contains('hidden');
+    var wsc = $('ws-canvas');
+    var over = new Event('dragover', { bubbles: true, cancelable: true }); over.dataTransfer = { types: ['Files'], files: [] };
+    wsc.dispatchEvent(over);
+    checks.s15_hint_shows_on_dragover = !$('canvas-dnd-hint').classList.contains('hidden');
+    var lv = new Event('dragleave', { bubbles: true, cancelable: true }); lv.dataTransfer = { types: ['Files'] };
+    wsc.dispatchEvent(lv);
+    checks.s15_hint_hides_on_leave = $('canvas-dnd-hint').classList.contains('hidden');
+
+    // ===== #16 マス目数の数値設定UI（上部リボン・右パネルと双方向同期） =====
+    TraceApp.reset(12, 4);
+    checks.s16_top_inputs_exist = !!$('grid-w-top') && !!$('grid-h-top') && !!$('btn-grid-apply');
+    $('grid-w-top').value = '30'; $('grid-h-top').value = '20';
+    click('btn-grid-apply');
+    checks.s16_grid_applied = TraceApp.getDoc().grid.w === 30 && TraceApp.getDoc().grid.h === 20;
+    checks.s16_synced_right = $('grid-w').value === '30' && $('grid-h').value === '20';
+
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks, alerts: window.__alerts, initErr: window.__initErr });
   } catch (e) {
