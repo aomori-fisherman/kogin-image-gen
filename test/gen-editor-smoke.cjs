@@ -33,6 +33,10 @@ function runSmoke() {
   function mm(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mousemove', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
   function mu(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mouseup', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
   function click(id){ var e=$(id); if(e) e.dispatchEvent(new MouseEvent('click',{bubbles:true})); }
+  function key(k){ document.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true})); }
+  function keyup(k){ document.dispatchEvent(new KeyboardEvent('keyup',{key:k,bubbles:true})); }
+  function mdAlt(cx,cy){ var p=TraceApp.cellClientPoint(cx,cy); TraceApp.svg().dispatchEvent(new MouseEvent('mousedown',{clientX:p.clientX,clientY:p.clientY,altKey:true,bubbles:true,cancelable:true})); }
+  function wheelAt(cx,cy,dy){ var p=TraceApp.cellClientPoint(cx,cy); TraceApp.svg().dispatchEvent(new WheelEvent('wheel',{deltaY:dy,clientX:p.clientX,clientY:p.clientY,bubbles:true,cancelable:true})); }
   try {
     if (typeof TraceApp === 'undefined') { done({ ok:false, error:'TraceApp未定義(初期化失敗)', initErr: window.__initErr }); return; }
     var checks = {};
@@ -104,6 +108,69 @@ function runSmoke() {
     $('underlay-fit-n').value = '10';
     click('btn-underlay-fit-w');
     checks.j_fit_guard = /下絵/.test(TraceApp.statusText());
+
+    // ===== #12 デザインツール型の操作コア（ラウンド2） =====
+    // K. ツール文字ショートカット（P/D/E/R/M/U/B）
+    TraceApp.reset(12, 4); TraceApp.setTool('pen');
+    key('e'); checks.k_key_e_eraser = TraceApp.getTool() === 'eraser';
+    key('m'); checks.k_key_m_rect = TraceApp.getTool() === 'rect';
+    key('b'); checks.k_key_b_break = TraceApp.getTool() === 'break';
+    key('r'); checks.k_key_r_select = TraceApp.getTool() === 'select';
+    key('u'); checks.k_key_u_underlay = TraceApp.getTool() === 'underlay';
+    key('p'); checks.k_key_p_pen = TraceApp.getTool() === 'pen';
+
+    // L. 自由方向ペン（縦ドラッグを線分補間で連続塗り＝グラフィティ挙動）
+    TraceApp.reset(12, 6); TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    md(2, 0); mm(2, 3); mu(2, 3);          // 縦4マス
+    checks.l_pen_vertical4 = TraceApp.cellCount() === 4;
+    checks.l_pen_vertical_cells = TraceApp.cellAt(2, 0) === 'r01' && TraceApp.cellAt(2, 1) === 'r01' && TraceApp.cellAt(2, 2) === 'r01' && TraceApp.cellAt(2, 3) === 'r01';
+
+    // M. 消しゴム補間（1移動の大ジャンプでも隙間なく消える）
+    TraceApp.reset(12, 6); TraceApp.setTool('pen'); TraceApp.setActiveColor('b01');
+    md(4, 0); mm(4, 4); mu(4, 4);          // 縦5マス
+    var beforeErase2 = TraceApp.cellCount();
+    TraceApp.setTool('eraser');
+    md(4, 0); mm(4, 4); mu(4, 4);          // 端から端まで1移動
+    checks.m_eraser_gapfree = beforeErase2 === 5 && TraceApp.cellCount() === 0;
+
+    // N. スポイト（Alt+クリックで塗られた色を取得・塗らない）
+    TraceApp.reset(12, 4); TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    md(1, 1); mm(3, 1); mu(3, 1);          // r01 を3マス
+    TraceApp.setActiveColor('b01');
+    checks.n_before_b01 = TraceApp.activeColorId() === 'b01';
+    mdAlt(2, 1);                            // r01 のマスを Alt+クリック
+    checks.n_eyedrop_picked = TraceApp.activeColorId() === 'r01';
+    checks.n_eyedrop_noPaint = TraceApp.cellCount() === 3;
+
+    // O. ホイールでカーソル中心ズーム（拡大/縮小・min/maxクランプ）
+    TraceApp.reset(12, 4); TraceApp.setTool('pen');
+    var z0 = TraceApp.getZoom();
+    wheelAt(6, 2, -100); var zIn = TraceApp.getZoom(); checks.o_wheel_in = zIn > z0;
+    wheelAt(6, 2, 100); checks.o_wheel_out = TraceApp.getZoom() < zIn;
+    for (var wi = 0; wi < 40; wi++) wheelAt(6, 2, 100);
+    checks.o_zoom_clamped_min = TraceApp.getZoom() >= 4;
+    for (var wj = 0; wj < 40; wj++) wheelAt(6, 2, -100);
+    checks.o_zoom_clamped_max = TraceApp.getZoom() <= 28;
+
+    // P. Esc で既定ツール（ペン）へ戻る
+    TraceApp.reset(12, 4); TraceApp.setTool('rect');
+    key('Escape');
+    checks.p_esc_to_pen = TraceApp.getTool() === 'pen';
+
+    // Q. パン（Space+ドラッグ）はどのツールでも塗らずに移動（塗り介入なし）
+    TraceApp.reset(12, 4); TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    key(' ');
+    md(2, 2); var wasPanning = TraceApp.isPanning(); mm(5, 2); mu(5, 2);
+    keyup(' ');
+    checks.q_pan_intercepts = wasPanning === true && TraceApp.cellCount() === 0;
+
+    // R. ホバーハイライト（ペン/消しゴムで現在セルを指す・他ツールでは消える）
+    TraceApp.reset(12, 4); TraceApp.setTool('pen');
+    mm(3, 2);
+    var hc = TraceApp.hoverCell();
+    checks.r_hover_pen = !!hc && hc.x === 3 && hc.y === 2 && hc.kind === 'pen';
+    TraceApp.setTool('select'); mm(4, 2);
+    checks.r_hover_cleared_nonpaint = TraceApp.hoverCell() === null;
 
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks, alerts: window.__alerts, initErr: window.__initErr });
