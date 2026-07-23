@@ -267,5 +267,31 @@ function deepEqual(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
   assert(!S.hasBreakAt(shr.doc.breaks, 0, 8), 'out-of-bounds break dropped');
 })();
 
+// 16. lineCells（#12・ドラッグ連続塗りの線分補間）: 端点含む・水平/垂直/斜め・隙間なし
+(() => {
+  // 水平 (2,3)->(9,3) = x2..9 の8マス（ペン水平ドラッグと同結果＝既存挙動と後方互換）
+  const h = S.lineCells(2, 3, 9, 3);
+  assert(h.length === 8, 'lineCells horizontal len 8 (' + h.length + ')');
+  assert(h[0].x === 2 && h[7].x === 9 && h.every(p => p.y === 3), 'lineCells horizontal cells y=3');
+  // 垂直 (2,0)->(2,3) = 4マス
+  const v = S.lineCells(2, 0, 2, 3);
+  assert(v.length === 4 && v.every(p => p.x === 2), 'lineCells vertical len 4');
+  // 斜め (0,0)->(3,3) = 対角4マス
+  const d = S.lineCells(0, 0, 3, 3);
+  assert(d.length === 4 && d[0].x === 0 && d[3].x === 3 && d[3].y === 3, 'lineCells diagonal 4');
+  // 同一点 = 1マス
+  assert(eq(S.lineCells(5, 5, 5, 5), [{ x: 5, y: 5 }]), 'lineCells same point = 1 cell');
+  // 逆向きは長さが同じで端点が入れ替わる（Bresenham の中間タイ処理で集合は必ずしも一致しない）
+  const f = S.lineCells(0, 0, 4, 2), rv = S.lineCells(4, 2, 0, 0);
+  assert(f.length === rv.length, 'lineCells reversed same length');
+  assert(rv[0].x === 4 && rv[0].y === 2 && rv[rv.length - 1].x === 0 && rv[rv.length - 1].y === 0, 'lineCells reversed endpoints swapped');
+  // 隙間なし: 連続マスが8近傍で隣接（各ステップ |dx|<=1 かつ |dy|<=1）
+  let contiguous = true;
+  for (let i = 1; i < f.length; i++) if (Math.abs(f[i].x - f[i - 1].x) > 1 || Math.abs(f[i].y - f[i - 1].y) > 1) contiguous = false;
+  assert(contiguous, 'lineCells 8-neighbour contiguous (no gaps)');
+  // 端点を含む
+  assert(f[0].x === 0 && f[0].y === 0 && f[f.length - 1].x === 4 && f[f.length - 1].y === 2, 'lineCells endpoints included');
+})();
+
 console.log('\ntrace-state-test: ' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

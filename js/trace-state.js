@@ -193,6 +193,26 @@
     }
   }
 
+  // 2点間を結ぶマス列（Bresenham 整数直線）。ドラッグ連続塗り/消しの隙間補間に使う（#12）。
+  // 端点を含み、隣接マスが連続する（8近傍でつながる）。同一点なら1マス。純関数。
+  function lineCells(x0, y0, x1, y1) {
+    x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
+    var out = [];
+    var dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    var sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    var err = dx - dy, x = x0, y = y0;
+    // 上限ガード（暴走防止）: 最大でも dx+dy+1 マス
+    var guard = dx + dy + 2;
+    while (guard-- > 0) {
+      out.push({ x: x, y: y });
+      if (x === x1 && y === y1) break;
+      var e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+    }
+    return out;
+  }
+
   // 1行1目・傾き±1固定の階段セル列。長さ = min(|dx|,|dy|)+1。
   function diagonalCells(x0, y0, dx, dy) {
     var n = Math.min(Math.abs(dx), Math.abs(dy));
@@ -353,6 +373,7 @@
     paintRun: paintRun,
     eraseRange: eraseRange,
     oddSnapLen: oddSnapLen,
+    lineCells: lineCells,
     diagonalCells: diagonalCells,
     runAt: runAt,
     moveRun: moveRun,
