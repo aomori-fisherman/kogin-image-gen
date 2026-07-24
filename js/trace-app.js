@@ -44,6 +44,7 @@
   var pan = null;                            // {sx,sy,sl,st} パンドラッグ中
   var hoverCell = null;                      // {x,y,kind} ペン/消しゴムのホバーハイライト
   var underlayVisible = true;                // #14 下絵の表示ON/OFF（非表示でもデータは保持）
+  var focusMode = false;                     // #17 全画面（フォーカス）モード
 
   // #13 下絵は zoom非依存の world単位で保持し、描画時に uf=zoom/ZREF で一律スケールしてグリッドと一体化する。
   function zref() { return CFG.zoom.init || 10; }
@@ -363,7 +364,7 @@
   function onWheel(e) {
     // 下絵移動ツール選択中（かつSpace非押下）＝ホイールで下絵拡縮（従来）。分離して衝突回避。
     if (tool === 'underlay' && cur().underlay && !spaceDown) {
-      e.preventDefault(); var f = e.deltaY < 0 ? 1.1 : 1 / 1.1; cur().underlay.scale = clamp(cur().underlay.scale * f, 0.1, 10); renderPreview(); scheduleAutosave(); return;
+      e.preventDefault(); var f = e.deltaY < 0 ? 1.1 : 1 / 1.1; cur().underlay.scale = clamp(cur().underlay.scale * f, 0.1, 10); renderPreview(); syncUnderlayControls(); scheduleAutosave(); return;
     }
     e.preventDefault();
     zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY);   // カーソル位置中心ズーム
@@ -402,6 +403,7 @@
     if (e.key === 'Alt') { if (!altDown) { altDown = true; if (!pan && !drag) setSvgCursor('eyedropper'); } return; }
     // Esc=進行中の操作（矩形選択・連続ペースト・切れ目・パン・選択）をキャンセルして既定ツールへ（#12）
     if (e.key === 'Escape') {
+      if (focusMode) { setFocusMode(false); return; }   // #17 全画面中はまず全画面を解除（ツールは保持）。次のEscで通常のキャンセルへ。
       pan = null; drag = null; ghostCells = null; repeatMode = false; marquee = null; rectSel = null; selection = null; hoverCell = null;
       if ($('repeat-form')) $('repeat-form').classList.add('hidden');
       var def = CFG.defaultTool || 'pen';
@@ -413,6 +415,7 @@
     if (!e.ctrlKey && !e.metaKey && !e.altKey) {
       var kl = (e.key || '').toLowerCase();
       if (kl === 'h') { toggleUnderlayVisible(); e.preventDefault(); return; }   // #14 下絵の表示ON/OFF
+      if (kl === 'f') { toggleFocusMode(); e.preventDefault(); return; }         // #17 全画面（フォーカス）モードのトグル
       if (TOOL_KEYS[kl]) { setTool(TOOL_KEYS[kl]); e.preventDefault(); return; }
       if (e.key >= '1' && e.key <= '7') { var ti = +e.key - 1; if (TOOLS[ti]) setTool(TOOLS[ti]); e.preventDefault(); return; }
     }
@@ -428,6 +431,18 @@
         var dx = 0, dy = 0;
         if (k === 'ArrowLeft') dx = -1; else if (k === 'ArrowRight') dx = 1; else if (k === 'ArrowUp') dy = -1; else dy = 1;
         moveSel(dx, dy); return;
+      }
+    }
+    // #18(b) 下絵移動ツール中の矢印キー: 下絵位置を world単位で微調整（Shiftで1マス=ZREF）。cellsには影響しない。
+    if (tool === 'underlay' && cur().underlay) {
+      var uk = e.key;
+      if (uk === 'ArrowLeft' || uk === 'ArrowRight' || uk === 'ArrowUp' || uk === 'ArrowDown') {
+        e.preventDefault();
+        var ustep = e.shiftKey ? zref() : 1;
+        var udx = 0, udy = 0;
+        if (uk === 'ArrowLeft') udx = -ustep; else if (uk === 'ArrowRight') udx = ustep;
+        else if (uk === 'ArrowUp') udy = -ustep; else udy = ustep;
+        moveUnderlayBy(udx, udy); return;
       }
     }
   }
@@ -516,7 +531,7 @@
   function setUnderlay(canvas, w, h) {
     var op = $('underlay-opacity') ? ($('underlay-opacity').value / 100) : 0.5;
     cur().underlay = { dataURL: canvas.toDataURL('image/png'), x: 0, y: 0, scale: 1, rotateDeg: 0, opacity: op, grayscale: $('chk-grayscale') ? $('chk-grayscale').checked : false, w: w, h: h };
-    centerUnderlay(); renderFull(); scheduleAutosave();
+    centerUnderlay(); renderFull(); syncUnderlayControls(); scheduleAutosave();
   }
   function loadUnderlayFile(file) {
     var cv = document.createElement('canvas');
@@ -556,7 +571,7 @@
     // #13 world単位（ZREF基準）でスケール算出＝現在ズームに依存しない（ズームは描画時 uf で反映）。
     var ZR = zref(), asp = cur().grid.cellAspect || 1;
     if (axis === 'h') u.scale = (n * asp * ZR) / u.h; else u.scale = (n * ZR) / u.w;
-    centerUnderlay(); renderFull(); scheduleAutosave();
+    centerUnderlay(); renderFull(); syncUnderlayControls(); scheduleAutosave();
     setStatus('下絵を' + (axis === 'h' ? '縦' : '横') + n + '目に合わせました（縦横比維持）');
   }
   // #14 下絵の表示ON/OFF（H キー / リボンのチェックボックス）。非表示でも underlay データは保持。
@@ -567,6 +582,56 @@
     if (cur().underlay) setStatus(underlayVisible ? '下絵を表示しました' : '下絵を非表示にしました（データは保持・H で戻す）');
   }
   function toggleUnderlayVisible() { setUnderlayVisible(!underlayVisible); }
+
+  // #17 全画面（フォーカス）モード: リボン・左右パネルを隠しキャンバス最大化（body.focus-mode）。
+  // ショートカット/ズーム/パン/undo は document/svg 直バインドなので全画面中も従来どおり有効。
+  function setFocusMode(on) {
+    focusMode = !!on;
+    if (document.body && document.body.classList) document.body.classList.toggle('focus-mode', focusMode);
+    var b = $('btn-focus-toggle');
+    if (b) { b.textContent = focusMode ? '⛶ 全画面を終了 (Esc)' : '⛶ 全画面'; b.classList.toggle('active-focus', focusMode); }
+    renderFull();   // レイアウト変化後の再描画（スクロール領域の再計算・パネル値の反映）
+    setStatus(focusMode ? '全画面モード（Esc または F で戻る）' : '全画面を終了しました');
+  }
+  function toggleFocusMode() { setFocusMode(!focusMode); }
+
+  // #18(a) 下絵の大きさをスライダーで連続調整（world単位・zoom非依存）。「横N目相当」を数値表示。
+  function underlayWidthCells() { var u = cur().underlay; if (!u) return 0; return (u.w * (u.scale || 1)) / zref(); }
+  function updateUnderlayScaleLabel() {
+    var lbl = $('uscale-val'); if (!lbl) return;
+    lbl.textContent = cur().underlay ? ('横 ' + clamp(Math.round(underlayWidthCells()), 1, 200) + ' 目') : '—';
+  }
+  // スライダー位置・ラベル・活殺を現在の下絵スケールへ同期（読込/フィット/ホイール/中心合わせ/クリア時に呼ぶ）。
+  function syncUnderlayControls() {
+    var sl = $('underlay-scale'), u = cur().underlay;
+    if (sl) { if (u) { sl.disabled = false; sl.value = clamp(Math.round(underlayWidthCells()), 1, 200); } else { sl.disabled = true; } }
+    updateUnderlayScaleLabel();
+  }
+  // 中心を保って world単位スケールへ（位置微調整と両立＝拡縮で下絵が飛ばない）。wheel と同じ [0.1,10] クランプ。
+  function setUnderlayScaleWorld(ns) {
+    var u = cur().underlay; if (!u) return;
+    ns = clamp(ns, 0.1, 10);
+    var s = u.scale || 1;
+    u.x = (u.x || 0) + (u.w * (s - ns)) / 2;
+    u.y = (u.y || 0) + (u.h * (s - ns)) / 2;
+    u.scale = ns;
+    renderPreview(); updateUnderlayScaleLabel(); scheduleAutosave();
+  }
+  // スライダー値（横N目相当）→ world単位スケール（fitと同一式・ズーム非依存）。
+  function setUnderlayWidthCells(n) {
+    var u = cur().underlay; if (!u) { setStatus('先に下絵を読み込んでください'); return; }
+    n = clamp(Math.round(n) || 1, 1, 200);
+    setUnderlayScaleWorld((n * zref()) / u.w);
+    setStatus('下絵の大きさ: 横' + clamp(Math.round(underlayWidthCells()), 1, 200) + '目相当（縦横比維持）');
+  }
+  // #18(b) 下絵移動ツール中の矢印キー微移動。world単位（zoom非依存）＝描画時 uf で反映。
+  function moveUnderlayBy(dx, dy) {
+    var u = cur().underlay; if (!u) return;
+    u.x = (u.x || 0) + dx; u.y = (u.y || 0) + dy;
+    renderPreview(); scheduleAutosave();
+    setStatus('下絵を移動（' + (dx ? (dx > 0 ? '右' : '左') : (dy > 0 ? '下' : '上')) + '・world単位）');
+  }
+
   // #9(b) 全消去（確認ダイアログ付き）。cells 全 null＋breaks クリア。undoで戻せる。
   function clearAll() {
     var vr = lastVr || analyzeNow();
@@ -646,8 +711,10 @@
     on('btn-rot-l', 'click', function () { rotateUnderlay(-90); });
     on('btn-rot-r', 'click', function () { rotateUnderlay(90); });
     on('underlay-rot', 'input', function () { if ($('urot-val')) $('urot-val').textContent = this.value + '°'; if (cur().underlay) { var coarse = Math.round(cur().underlay.rotateDeg / 90) * 90; cur().underlay.rotateDeg = coarse + parseInt(this.value, 10); renderPreview(); scheduleAutosave(); } });
-    on('btn-underlay-center', 'click', function () { centerUnderlay(); renderFull(); scheduleAutosave(); });
-    on('btn-underlay-clear', 'click', function () { cur().underlay = null; renderFull(); scheduleAutosave(); });
+    on('btn-underlay-center', 'click', function () { centerUnderlay(); renderFull(); syncUnderlayControls(); scheduleAutosave(); });
+    on('btn-underlay-clear', 'click', function () { cur().underlay = null; renderFull(); syncUnderlayControls(); scheduleAutosave(); });
+    on('underlay-scale', 'input', function () { setUnderlayWidthCells(parseInt(this.value, 10)); });   // #18(a) 下絵の大きさスライダー（world単位・中心保持）
+    on('btn-focus-toggle', 'click', toggleFocusMode);   // #17 全画面（フォーカス）モードのトグル
     // 範囲選択（導線ガードは alert でなく次の一手を提示＝#11）
     on('btn-copy', 'click', function () { if (!guardRect()) return; clip = S.copyRect(cur().cells, rectSel.x, rectSel.y, rectSel.w, rectSel.h); updateRectButtons(); setStatus('コピー: ' + clip.w + '×' + clip.h + '目（連続ペーストが使えます）'); });
     on('btn-rect-fill', 'click', function () { if (!guardRect()) return; for (var y = rectSel.y; y < rectSel.y + rectSel.h; y++) S.paintRun(cur().cells, y, rectSel.x, rectSel.x + rectSel.w - 1, activeColor); store.commit('rect-fill'); renderFull(); scheduleAutosave(); });
@@ -725,6 +792,10 @@
         if (!img) return null;
         return { x: +img.getAttribute('x'), y: +img.getAttribute('y'), w: +img.getAttribute('width'), h: +img.getAttribute('height') };
       },
+      // #17/#18 テスト用: 全画面状態・下絵の world幾何・横目数相当
+      focusMode: function () { return focusMode; },
+      underlayWorld: function () { var u = cur().underlay; return u ? { x: u.x, y: u.y, w: u.w, h: u.h, scale: u.scale } : null; },
+      underlayWidthCells: underlayWidthCells,
       activeColorId: function () { return activeColor; },
       hoverCell: function () { return hoverCell; },
       isPanning: function () { return !!pan; },
@@ -765,7 +836,7 @@
     if (!start) { var p = CFG.PRESETS.filter(function (x) { return x.id === 'meishiire'; })[0] || CFG.PRESETS[0]; start = S.newDoc(p.w || 80, p.h || 100); }
     store = S.DocStore(start);
     buildPalette(); buildFabricSelect(); buildPresetSelect(); bindControls(); bindCanvas(); bindKeyboard(); wireCanvasDnd();
-    setTool(tool); setActiveColor(activeColor); syncGridControls();
+    setTool(tool); setActiveColor(activeColor); syncGridControls(); syncUnderlayControls();
     renderFull(); setStatus('準備完了（すべて仮値・実測後に差し替え）');
     exposeTestApi();
   }
