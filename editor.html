@@ -144,8 +144,9 @@
     <div class="canvas-dnd-hint hidden" id="canvas-dnd-hint">ここにドロップで下絵を読み込み</div>
     <div class="canvas-toolbar">
       <span>ツール: <b id="cur-tool-name">ペン</b></span>
-      <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・H=下絵ON/OFF・Esc=ペンに戻る</span>
+      <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・H=下絵ON/OFF・F=全画面・Esc=戻る</span>
       <span class="spacer"></span>
+      <button class="btn-ghost" id="btn-focus-toggle" title="キャンバスだけの全画面表示（F キー・Esc で戻る）">⛶ 全画面</button>
       <button class="btn-ghost" id="btn-toggle-right" title="右パネルの表示/格納">⚙ 設定パネル</button>
     </div>
     <div class="canvas-wrap" id="canvas-wrap">
@@ -186,6 +187,9 @@
         </div>
         <label class="check"><input type="checkbox" id="chk-fit-aspect" checked> 縦横比を維持（単一スケール）</label>
       </div>
+      <label class="block lbl">大きさ（スライダーで連続調整・横目数相当） <b id="uscale-val">—</b></label>
+      <input type="range" id="underlay-scale" min="1" max="200" step="1" value="80" title="下絵の大きさを連続調整（横N目相当・縦横比維持・中心を保って拡縮）">
+      <p class="hint">「下絵移動」(U) 中は<b>矢印キー</b>で位置を微調整（Shiftで1マスずつ大きく移動）。</p>
       <label class="block lbl">透過 <b id="uop-val">50%</b></label>
       <input type="range" id="underlay-opacity" min="0" max="100" step="1" value="50">
       <label class="check"><input type="checkbox" id="chk-grayscale"> グレースケール</label>

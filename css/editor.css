@@ -59,6 +59,17 @@ html, body {
 .ws.right-collapsed { grid-template-columns: 236px 1fr 0; }
 .ws-right.collapsed { display: none; }
 
+/* ---- 全画面（フォーカス）モード（#17）: リボン・左右パネルを隠しキャンバス最大化 ---- */
+/* CSSのみ・DOM構造とキャンバス寸法計算は不変。ショートカット/ズーム/パン/undoは document/svg 直バインドで維持。 */
+body.focus-mode .ed-header,
+body.focus-mode .ribbon,
+body.focus-mode .ws-left,
+body.focus-mode .ws-right { display: none !important; }
+body.focus-mode .ws { grid-template-columns: 1fr; padding: 6px; gap: 0; }
+body.focus-mode .ws-canvas { border-radius: 0; }
+body.focus-mode .canvas-wrap { max-height: calc(100vh - 84px); }
+.btn-ghost.active-focus { border-color: var(--accent); color: var(--text); }
+
 /* ---- パネル共通 ---- */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .panel h2 { font-size: 12px; margin: 0 0 8px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 5px; }
