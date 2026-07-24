@@ -255,3 +255,22 @@
 - 現状: 縦横マス数の数値入力は右パネル（折りたたみ既定）の `grid-w`/`grid-h` のみ＝見つけにくい。
 - 要望: 縦×横のマス数を数値直接入力で設定するUIを、見つけやすい上部リボンへ昇格（右パネルの既存入力は併存・相互同期）。既存塗りデータのリサイズ挙動は現行 `resizeGrid`（左上基準・落ちる刺し目は確認）を踏襲。
 - **実装結果（2026-07-24・dev）**: 上部リボンに「マス目 横×縦＋適用」（`grid-w-top`/`grid-h-top`/`btn-grid-apply`）を追加＝`applyResize` 直結。`syncGridControls` で右パネル `grid-w/h` と双方向同期。スモークで 横30×縦20 適用→`grid.w/h` 反映かつ右パネル値同期を検証（`s16_*` 全pass）。
+
+---
+
+## 8. ラウンド4 — 全画面モード・下絵の精密操作（#17・#18・池田さんFB 2026-07-24）
+
+> 池田さん（現場実務者・ハートスポット）の初フィードバック2点。R3までの構造（world単位下絵・break層・操作コア）を壊さず、
+> vanilla JS・依存追加なし・floatMax=7不変で実装。
+
+### #17 全画面モード（キャンバスだけの全画面表示で塗れる）— T0.5.3（R4で実装）
+- 要望: 画面切り替えで上部リボン・左右パネルを全部隠し、キャンバスを最大化して塗れる全画面トグル。ボタン＋F キー、Esc で戻る。全画面中もツールのキーショートカット（P/E/R/M/U/B）・ズーム・パン・undo は全部効くこと。最小限のフローティングUI（現在ツール表示＋戻るボタン）は可。
+- 方針: `body.focus-mode` クラス1枚でリボン・左右パネルを `display:none`・`.ws` を1カラム・キャンバスを最大化（CSSのみ・DOM構造とキャンバス寸法計算は不変）。トグルは canvas-toolbar のボタン＋`F` キー、`Esc` は全画面中まず全画面解除（ツールは保持）。ショートカット/ズーム/パン/undo は document/svg 直バインドなのでパネル非表示でも従来どおり有効。現在ツール表示（既存 `cur-tool-name`）＋戻るボタン（同トグルボタンが「全画面を終了」に変化）でフローティングUI要件を満たす。
+- **実装結果（2026-07-24・dev）**: `focusMode` 状態＋`setFocusMode`/`toggleFocusMode`（body クラス切替・ボタン文言切替）。`F` キー・`btn-focus-toggle` でトグル、`Esc` で解除。editor.css に `body.focus-mode` レイアウト規則。スモークで F→ON・全画面中に `e` でeraser切替とホイールズームが効く・Esc→OFF・ボタントグルを検証（`s17_*` 全pass）＋CSS実機プローブで header/ribbon/左右パネルが `display:none`・`.ws` が1カラムを確認。
+
+### #18 下絵の大きさ・位置の精密操作 — T0.5.3（R4で実装）
+- 要望(a): スライダー（つまみ）で下絵のスケールを連続調整（下絵パネル内・数値表示付き）。(b): 矢印キー（上下左右）で下絵の位置を1px/マス単位で微移動（下絵移動ツール選択中・Shift併用で大きく移動）。既存「横N目フィット」（R3の#13 world単位ジオメトリ）と整合＝スライダーもキー移動もworld単位系で動くこと。
+- 方針: (a) 下絵パネルに `underlay-scale` スライダー（値＝横N目相当・1〜200）。値→world単位スケール `scale=(N×ZREF)/u.w`（fitと同一式・ズーム非依存）。中心を保って拡縮＝矢印微調整と両立。数値表示 `uscale-val`＝「横 N 目」。wheel と同じ [0.1,10] でクランプ。(b) 下絵移動ツール中の矢印キーで `underlay.x/y` を world単位で加算（微＝1 world単位／Shift＝1マス＝ZREF）。どちらも `underlay` は undo対象外（既存のドラッグ/ホイールと同じ・cellsに影響なし）。
+- **実装結果（2026-07-24・dev）**: (a) `underlay-scale` スライダー＋`setUnderlayWidthCells`/`setUnderlayScaleWorld`（中心保持拡縮）・`syncUnderlayControls`（読込/フィット/ホイール/中心合わせ/クリアで同期）。(b) onKey に下絵移動ツール中の矢印分岐＝`moveUnderlayBy`（world単位・Shiftで1マス）。スモークで スライダー→横60目相当へ拡縮かつ world中心が不変・ラベル更新（`s18a_*`）、矢印→+1world・Shift矢印→+ZREF・上→−1world・cells不変（`s18b_*`）を全pass。help.html④に全画面と下絵微調整の操作を追記。
+
+**R4 検証記録（2026-07-24・dev）**: 純関数 state 101・validate 27／ヘッドレス trace-harness 28・trace-ui-path-probe 20・trace-editor-smoke **78**（R3の61＋R4の17＝s17×9・s18a×4・s18b×4）／新規 `test/trace-focus-css-probe.html` **13**（本物の `css/editor.css` を読み込み `body.focus-mode` で header/ribbon/左右パネルが `display:none`・`.ws` が1カラムになるのを `getComputedStyle` で実測）＝**全green**。既存の画像パイプライン（algo 12・producible 3320・pipeline violations 0）も維持。前セッションが着手した部分実装（未コミット・スモーク未追加・配線未完）を検証のうえ完成させた形。**push はしない**（main 検閲後）。

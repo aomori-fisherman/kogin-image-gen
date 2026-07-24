@@ -46,6 +46,15 @@
 - **マス目数の数値設定UI**（#16）: 上部リボンに「マス目 横×縦＋適用」（`grid-w-top`/`grid-h-top`/`btn-grid-apply`）を昇格。右パネルの `grid-w`/`grid-h` と双方向同期。リサイズ挙動は現行 `resizeGrid`（左上基準・落ちる刺し目は確認）を踏襲。
 - 不変: `floatMax=7`・break層・cells/breaksモデル・ラウンド2の操作コア。
 
+## T0.5.3 改修サマリー（#17・#18・R4・全画面/下絵の精密操作）
+
+> 池田さん（現場実務者）の初フィードバック2点。R3までの構造（world単位下絵・break層・操作コア）を壊さず、vanilla JS・依存追加なし・`floatMax=7` 不変で実装。
+
+- **全画面（フォーカス）モード**（#17）: `F` キー／キャンバス右上の「⛶ 全画面」ボタンで、上部リボン・左右パネルを隠しキャンバスを最大化（`body.focus-mode` クラス1枚・**CSSのみ**／DOM構造とキャンバス寸法計算は不変）。`Esc` は全画面中まず全画面解除（ツールは保持）→ 通常時は既定ツールへ戻す2段。全画面中もツールショートカット（P/E/R/M/U/B）・ズーム・パン・undo は document/svg 直バインドのため従来どおり有効。ボタン文言は「⛶ 全画面」⇔「⛶ 全画面を終了 (Esc)」に切替。
+- **下絵の大きさスライダー**（#18a）: 右パネル下絵に `underlay-scale` スライダー（値＝横N目相当・1〜200）。値→world単位スケール `scale=(N×ZREF)/u.w`（fitと同一式・ズーム非依存）。**中心を保って拡縮**（矢印微調整と両立＝拡縮で下絵が飛ばない）。数値表示 `uscale-val`＝「横 N 目」。読込/フィット/ホイール/中心合わせ/クリアでスライダー・ラベルを同期（`syncUnderlayControls`）。
+- **下絵の位置を矢印キーで微調整**（#18b）: 「下絵移動」(U) 選択中の矢印キーで `underlay.x/y` を world単位で加算（微＝1 world単位／`Shift`＝1マス＝ZREF）。`underlay` は undo対象外（既存のドラッグ/ホイールと同じ・cellsに影響なし）。
+- 不変: `floatMax=7`・break層・cells/breaksモデル・world単位下絵ジオメトリ（#13）・操作コア。
+
 ## 開き方
 
 ```
@@ -75,7 +84,9 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 | B / 7 | 切れ目 | 同色ランの**マス境界**をクリックで切れ目をトグル（渡りを分割／再クリックで解除） |
 
 - 取消/やり直し: Ctrl+Z / Ctrl+Y（ボタンも有り）。入力欄フォーカス中はショートカット無効。
-- ズーム: ホイール（カーソル中心）／リボンの `100%`・`全体表示`。パン: Space+ドラッグ・中ボタンドラッグ（どのツールでも）。スポイト: Alt+クリック。**Esc: 進行中操作をキャンセルして既定ツール（ペン）へ**。
+- ズーム: ホイール（カーソル中心）／リボンの `100%`・`全体表示`。パン: Space+ドラッグ・中ボタンドラッグ（どのツールでも）。スポイト: Alt+クリック。**Esc: 進行中操作をキャンセルして既定ツール（ペン）へ**（全画面中はまず全画面を解除）。
+- **全画面（フォーカス）**（#17）: `F`／「⛶ 全画面」ボタンでリボン・左右パネルを隠しキャンバス最大化。`Esc`/`F` で戻る（全画面中もツール/ズーム/パン/undo有効）。
+- 下絵の精密操作（#18）: 右パネル下絵の**大きさスライダー**（横N目相当・中心保持で連続拡縮）＋「下絵移動」(U)中の**矢印キー**で位置微調整（Shiftで1マス＝ZREF・cellsに影響なし）。
 - 奇数スナップ（既定OFF）: 偶数長ランを1目伸縮して奇数に寄せる補助。
 - 検証パネル: 総目数/渡り本数/使用色/最長渡り/`float>7`箇所（赤・**チャート不可**）/偶数ラン箇所（黄・警告のみ）。**切れ目で分割したランは分割後の長さで判定**（8目→切れ目→4+4で違反解消）。
 - チャート出力: 記号グリッド＋凡例＋注記を1枚のSVGで生成→印刷（A4縦）/PNG保存。**紙チャートは従来のセル記号のまま**（切れ目は画面表示とfloat検証のみ・要確認事項として保留）。
@@ -120,7 +131,8 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 # 出力DOMの <div id="trace-harness-result"> の RESULT:{...} で "ok":true を確認
 #   trace-harness.html        機能ハーネス（ペン/斜線/矩形/チャート/roundtrip＋break E2E）
 #   trace-ui-path-probe.html  範囲操作の導線（T0.5=disabled表示＋ガイド提示・alertゼロ／20チェック）
-#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI・61チェック）
+#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)・78チェック）
+#   trace-focus-css-probe.html 全画面モードのCSS実効を getComputedStyle で検証（本物の editor.css を読込・display:none/1カラム化・13チェック）
 ```
 
 既存テスト（改修後も green を維持）:
@@ -142,11 +154,12 @@ js/trace-state.js          ドキュメントモデル・編集純関数・undo/
 js/trace-validate.js       多色ラン抽出（breaks分割）・float/偶数ラン検出・集計（Node両用）
 js/trace-render.js         cells → SVGレイヤ文字列（breaks分割描画＋切れ目マーカー＋hoverCell＋下絵 uf一律スケール/表示ゲート）
 js/trace-chart.js          チャートSVG生成・印刷・PNG書き出し（T0.5では不変）
-js/trace-app.js            配線層（ツール7種・連続塗り/消し・ズーム/パン/スポイト/ショートカット・切れ目/フィット/導線ガード・下絵ズーム一体化(uf)/表示トグル(H)/キャンバスD&D/マス目UI・保存）
+js/trace-app.js            配線層（ツール7種・連続塗り/消し・ズーム/パン/スポイト/ショートカット・切れ目/フィット/導線ガード・下絵ズーム一体化(uf)/表示トグル(H)/キャンバスD&D/マス目UI・全画面(F)/下絵スライダー/下絵矢印(#17/#18)・保存）
 test/trace-state-test.cjs      純関数テスト（101・lineCells 補間含む）
 test/trace-validate-test.cjs   純関数テスト（27）
 test/trace-harness.html        機能ハーネス（break E2E含む）
 test/trace-ui-path-probe.html  範囲操作の導線プローブ（T0.5導線・20チェック）
 test/gen-editor-smoke.cjs      実editor.html→スモークHTML生成器
-test/trace-editor-smoke.html   生成物（実DOMスモーク・44チェック／操作コア含む）
+test/trace-editor-smoke.html   生成物（実DOMスモーク・78チェック／操作コア＋下絵ズーム一体化/表示/D&D/マス目/全画面/下絵精密操作）
+test/trace-focus-css-probe.html 全画面モードのCSS実効プローブ（editor.css読込・getComputedStyle・13チェック）
 ```
