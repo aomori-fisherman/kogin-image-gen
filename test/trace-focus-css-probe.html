@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- #17 全画面（フォーカス）モードの CSS 実効を getComputedStyle で検証する軽量プローブ。
+     gen-editor-smoke はロジック非依存のため CSS を剥がす＝display:none の実効はそこでは測れない。
+     ここでは本物の css/editor.css を読み込み、body.focus-mode で
+     ヘッダ/リボン/左右パネルが display:none・.ws が1カラムになることを実測する。
+     セレクタは body.focus-mode .ribbon 等のフラット子孫指定なので、最小DOMで実効を再現できる。 -->
+<link rel="stylesheet" href="../css/editor.css">
+</head>
+<body>
+<header class="ed-header">header</header>
+<div class="ribbon">ribbon</div>
+<div class="ws">
+  <aside class="ws-left">left</aside>
+  <main class="ws-canvas">canvas</main>
+  <aside class="ws-right">right</aside>
+</div>
+
+<div id="trace-harness-result">PENDING</div>
+<script>
+function run() {
+  var out = document.getElementById('trace-harness-result');
+  function done(o) { out.textContent = 'RESULT:' + JSON.stringify(o); }
+  function disp(sel) { return getComputedStyle(document.querySelector(sel)).display; }
+  function cols(sel) { return getComputedStyle(document.querySelector(sel)).gridTemplateColumns.trim().split(/\s+/).length; }
+  try {
+    var checks = {};
+    // 通常時: ヘッダ・リボン・左右パネルは表示、.ws は3カラム
+    checks.normal_header_shown = disp('.ed-header') !== 'none';
+    checks.normal_ribbon_shown = disp('.ribbon') !== 'none';
+    checks.normal_left_shown = disp('.ws-left') !== 'none';
+    checks.normal_right_shown = disp('.ws-right') !== 'none';
+    checks.normal_ws_3col = cols('.ws') === 3;
+    // 全画面時: focus-mode でヘッダ・リボン・左右パネルが display:none、.ws は1カラム
+    document.body.classList.add('focus-mode');
+    checks.focus_header_hidden = disp('.ed-header') === 'none';
+    checks.focus_ribbon_hidden = disp('.ribbon') === 'none';
+    checks.focus_left_hidden = disp('.ws-left') === 'none';
+    checks.focus_right_hidden = disp('.ws-right') === 'none';
+    checks.focus_canvas_shown = disp('.ws-canvas') !== 'none';   // キャンバスは残る
+    checks.focus_ws_1col = cols('.ws') === 1;
+    // 解除で元に戻る
+    document.body.classList.remove('focus-mode');
+    checks.restore_ribbon_shown = disp('.ribbon') !== 'none';
+    checks.restore_ws_3col = cols('.ws') === 3;
+    var ok = Object.keys(checks).every(function (k) { return checks[k]; });
+    done({ ok: ok, checks: checks });
+  } catch (e) { done({ ok: false, error: (e && e.message) || String(e) }); }
+}
+if (document.readyState === 'complete') run(); else window.addEventListener('load', run);
+</script>
+</body>
+</html>

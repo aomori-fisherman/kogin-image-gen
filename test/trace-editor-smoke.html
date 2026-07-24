@@ -143,8 +143,9 @@
     <div class="canvas-dnd-hint hidden" id="canvas-dnd-hint">ここにドロップで下絵を読み込み</div>
     <div class="canvas-toolbar">
       <span>ツール: <b id="cur-tool-name">ペン</b></span>
-      <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・H=下絵ON/OFF・Esc=ペンに戻る</span>
+      <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・H=下絵ON/OFF・F=全画面・Esc=戻る</span>
       <span class="spacer"></span>
+      <button class="btn-ghost" id="btn-focus-toggle" title="キャンバスだけの全画面表示（F キー・Esc で戻る）">⛶ 全画面</button>
       <button class="btn-ghost" id="btn-toggle-right" title="右パネルの表示/格納">⚙ 設定パネル</button>
     </div>
     <div class="canvas-wrap" id="canvas-wrap">
@@ -185,6 +186,9 @@
         </div>
         <label class="check"><input type="checkbox" id="chk-fit-aspect" checked> 縦横比を維持（単一スケール）</label>
       </div>
+      <label class="block lbl">大きさ（スライダーで連続調整・横目数相当） <b id="uscale-val">—</b></label>
+      <input type="range" id="underlay-scale" min="1" max="200" step="1" value="80" title="下絵の大きさを連続調整（横N目相当・縦横比維持・中心を保って拡縮）">
+      <p class="hint">「下絵移動」(U) 中は<b>矢印キー</b>で位置を微調整（Shiftで1マスずつ大きく移動）。</p>
       <label class="block lbl">透過 <b id="uop-val">50%</b></label>
       <input type="range" id="underlay-opacity" min="0" max="100" step="1" value="50">
       <label class="check"><input type="checkbox" id="chk-grayscale"> グレースケール</label>
@@ -234,6 +238,7 @@ function runSmoke() {
   function mu(cx, cy) { var p = TraceApp.cellClientPoint(cx, cy); window.dispatchEvent(new MouseEvent('mouseup', { clientX: p.clientX, clientY: p.clientY, bubbles: true })); }
   function click(id){ var e=$(id); if(e) e.dispatchEvent(new MouseEvent('click',{bubbles:true})); }
   function key(k){ document.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true})); }
+  function keyShift(k){ document.dispatchEvent(new KeyboardEvent('keydown',{key:k,shiftKey:true,bubbles:true,cancelable:true})); }
   function keyup(k){ document.dispatchEvent(new KeyboardEvent('keyup',{key:k,bubbles:true})); }
   function mdAlt(cx,cy){ var p=TraceApp.cellClientPoint(cx,cy); TraceApp.svg().dispatchEvent(new MouseEvent('mousedown',{clientX:p.clientX,clientY:p.clientY,altKey:true,bubbles:true,cancelable:true})); }
   function wheelAt(cx,cy,dy){ var p=TraceApp.cellClientPoint(cx,cy); TraceApp.svg().dispatchEvent(new WheelEvent('wheel',{deltaY:dy,clientX:p.clientX,clientY:p.clientY,bubbles:true,cancelable:true})); }
@@ -421,6 +426,49 @@ function runSmoke() {
     click('btn-grid-apply');
     checks.s16_grid_applied = TraceApp.getDoc().grid.w === 30 && TraceApp.getDoc().grid.h === 20;
     checks.s16_synced_right = $('grid-w').value === '30' && $('grid-h').value === '20';
+
+    // ===== #17 全画面（フォーカス）モード（R4・F/Esc/ボタン・全画面中もツール/ズーム有効） =====
+    TraceApp.reset(12, 4); TraceApp.setTool('pen');
+    checks.s17_toggle_exists = !!$('btn-focus-toggle');
+    checks.s17_off_default = document.body.className.indexOf('focus-mode') < 0 && TraceApp.focusMode() === false;
+    key('f');                                             // 全画面ON
+    checks.s17_on_after_f = document.body.className.indexOf('focus-mode') >= 0 && TraceApp.focusMode() === true;
+    key('e'); checks.s17_tool_in_focus = TraceApp.getTool() === 'eraser';        // 全画面中もツールショートカット有効
+    var zf0 = TraceApp.getZoom(); wheelAt(6, 2, -100);
+    checks.s17_zoom_in_focus = TraceApp.getZoom() > zf0;                          // 全画面中もホイールズーム有効
+    key('Escape');                                        // Esc=全画面解除のみ・ツールは保持
+    checks.s17_off_after_esc = TraceApp.focusMode() === false;
+    checks.s17_tool_kept_after_esc = TraceApp.getTool() === 'eraser';
+    click('btn-focus-toggle'); checks.s17_on_after_btn = TraceApp.focusMode() === true;
+    click('btn-focus-toggle'); checks.s17_off_after_btn = TraceApp.focusMode() === false;
+
+    // ===== #18(a) 下絵の大きさスライダー（R4・world単位・中心保持・zoom非依存） =====
+    TraceApp.reset(40, 30); TraceApp.zoomReset100(); TraceApp.setUnderlayTest(200, 120, 1);
+    checks.s18a_slider_exists = !!$('underlay-scale');
+    var uw0 = TraceApp.underlayWorld();
+    var wcx0 = uw0.x + uw0.w * uw0.scale / 2, wcy0 = uw0.y + uw0.h * uw0.scale / 2;   // world中心
+    $('underlay-scale').value = '60';
+    $('underlay-scale').dispatchEvent(new Event('input', { bubbles: true }));
+    checks.s18a_width60 = Math.abs(TraceApp.underlayWidthCells() - 60) < 1;            // 横60目相当へ拡縮
+    var uw1 = TraceApp.underlayWorld();
+    var wcx1 = uw1.x + uw1.w * uw1.scale / 2, wcy1 = uw1.y + uw1.h * uw1.scale / 2;
+    checks.s18a_center_kept = Math.abs(wcx1 - wcx0) < 0.01 && Math.abs(wcy1 - wcy0) < 0.01;   // 中心を保って拡縮
+    checks.s18a_label = /60/.test($('uscale-val').textContent);
+
+    // ===== #18(b) 下絵移動ツール中の矢印キー微移動（R4・world単位・Shift=1マス・cells不変） =====
+    TraceApp.reset(40, 30); TraceApp.zoomReset100(); var ZREF = TraceApp.getZoom(); TraceApp.setUnderlayTest(200, 120, 1);
+    TraceApp.setTool('underlay');
+    var b0 = TraceApp.underlayWorld();
+    key('ArrowRight');                                    // +1 world（x）
+    var b1 = TraceApp.underlayWorld();
+    checks.s18b_arrow_right_1world = Math.abs((b1.x - b0.x) - 1) < 0.001 && b1.y === b0.y;
+    keyShift('ArrowRight');                               // +ZREF world（Shift=1マス）
+    var b2 = TraceApp.underlayWorld();
+    checks.s18b_shift_arrow_1cell = Math.abs((b2.x - b1.x) - ZREF) < 0.001;
+    key('ArrowUp');                                       // -1 world（y）
+    var b3 = TraceApp.underlayWorld();
+    checks.s18b_arrow_up_1world = Math.abs((b3.y - b2.y) + 1) < 0.001;
+    checks.s18b_cells_unaffected = TraceApp.cellCount() === 0;   // 下絵移動はcellsに影響しない
 
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks, alerts: window.__alerts, initErr: window.__initErr });
