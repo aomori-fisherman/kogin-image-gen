@@ -274,3 +274,18 @@
 - **実装結果（2026-07-24・dev）**: (a) `underlay-scale` スライダー＋`setUnderlayWidthCells`/`setUnderlayScaleWorld`（中心保持拡縮）・`syncUnderlayControls`（読込/フィット/ホイール/中心合わせ/クリアで同期）。(b) onKey に下絵移動ツール中の矢印分岐＝`moveUnderlayBy`（world単位・Shiftで1マス）。スモークで スライダー→横60目相当へ拡縮かつ world中心が不変・ラベル更新（`s18a_*`）、矢印→+1world・Shift矢印→+ZREF・上→−1world・cells不変（`s18b_*`）を全pass。help.html④に全画面と下絵微調整の操作を追記。
 
 **R4 検証記録（2026-07-24・dev）**: 純関数 state 101・validate 27／ヘッドレス trace-harness 28・trace-ui-path-probe 20・trace-editor-smoke **78**（R3の61＋R4の17＝s17×9・s18a×4・s18b×4）／新規 `test/trace-focus-css-probe.html` **13**（本物の `css/editor.css` を読み込み `body.focus-mode` で header/ribbon/左右パネルが `display:none`・`.ws` が1カラムになるのを `getComputedStyle` で実測）＝**全green**。既存の画像パイプライン（algo 12・producible 3320・pipeline violations 0）も維持。前セッションが着手した部分実装（未コミット・スモーク未追加・配線未完）を検証のうえ完成させた形。**push はしない**（main 検閲後）。
+
+---
+
+## 9. ラウンド5 — ブラウザ内保存メニュー（#19・伎海FB 2026-07-30）
+
+> 「一度保存したものをメニューから参照できるようにしたい」。R4までの構造（world単位下絵・break層・操作コア・全画面）を壊さず、
+> vanilla JS・依存追加なし・floatMax=7不変・データモデル不変で実装。保存の**置き場所を1つ増やすだけ**の変更。
+
+### #19 保存済みデザインをエディタ内の一覧から開く — T0.5.4（R5で実装）
+- 要望: (1) 名前を付けて保存（既存JSON保存と同じデータ構造を localStorage へ・名前の既定値＝日時）。(2) 保存済み一覧（名前・保存日時・64px程度の小サムネイル）から**クリックで読込**、未保存なら上書き確認。(3) 一覧からの削除・上書き保存。(4) 既存のJSONファイル保存/読込は残し、**役割分担を明記**（ファイル＝バックアップ・端末間共有／ブラウザ内＝この端末での続き）。(5) 「この端末のこのブラウザだけ・ブラウザのデータ削除で消える・大事な作品はJSONも併用」を UI と help.html に明記。(6) 容量対策（サムネは小さく・容量超過は握りつぶさずメッセージ表示）。
+- 方針: 純ロジックを `js/trace-library.js` に分離（**storage 注入式**＝Node の fake storage でテスト可。DOM/canvasに触らない）。**索引と本体を別キーに分離**（索引 `kogin-trace-library-v1` にメタ＋サムネ／本体 `kogin-trace-doc-v1:<id>` に serialize文字列）＝1件保存で全件を書き直さない・一覧描画で本体を読まない。自動保存キー `kogin-trace-autosave-v1` は従来のまま併存（起動時の「続きを開く」は不変）。UIはモーダル1枚（`library-modal`）＋リボン「ファイル」に2ボタン＋役割注記。未保存判定は `dirty`（`scheduleAutosave` を全編集が通るのでそこで立てる／名前付き保存・読込・JSON保存で下ろす）。容量超過は `reason:'quota'` を返し、UI側でメニューを開いて定型文を表示（その場で古い保存を削除できる導線）。途中失敗は巻き戻し（新規は本体キー削除／上書きは旧本体を復元）＝孤児キー・不整合索引を残さない。
+- **実装結果（2026-07-30・master）**: `js/trace-library.js`（新規・save/load/list/find/remove/usageBytes/available/isQuotaError・索引破損時は空扱いで死なない）＋ `trace-app.js` に配線（`saveToLibrary`/`promptSaveNew`/`openFromLibrary`/`overwriteLibrary`/`deleteFromLibrary`/`renderLibraryList`/`buildThumb`＝canvas 64px PNG・24KB超なら添付しない）。メニュー表示中はキャンバスのショートカットを停止し `Esc`／背景クリックで閉じる。editor.html にリボン2ボタン＋`file-role-note`＋モーダル、editor.css に `.modal-back`/`.lib-*`/`.rb-note`、help.html に⑥「保存のしかた（2種類あります）」＋トラブル2項目を追記。
+- **既存機能は不変**: JSONで保存/JSON読込・自動保存・チャート出力・全画面・下絵まわり・cells/breaks/floatMax=7。
+
+**R5 検証記録（2026-07-30・master）**: 純関数 state 101・validate 27・**library 45（新規）**／ヘッドレス trace-harness 28・trace-ui-path-probe 20・trace-focus-css-probe 13・**trace-editor-smoke 124（R4の78＋R5の46＝要素/役割注記/開閉/名前付き保存/既定名=日時/メタ/サムネdataURL/一覧DOM/開く/未保存確認とキャンセル/上書き/容量超過メッセージ/ショートカット停止/Esc/削除）**・**trace-library-css-probe 16（新規・モーダルの display・チャートより前面・サムネ64px角・注記の実効）**＝**全green**。既存の画像パイプライン（algo 12・producible 3320・pipeline violations 0・harness ok:true）も維持。実 `editor.html` をヘッドレスで直接読み込み、`canvas-status=準備完了`・`library-count=0件・約0KB`（＝実 localStorage で索引読み出しが動作）を確認。**push はしない**（伎海の実機目視後に main が push）。

@@ -1,6 +1,6 @@
 # こぎんトレース台エディタ T0.5（editor.html）
 
-> 作成: 2026-07-22 ／ T0.5改修: 2026-07-23 ／ T0.5.1（デザインツール型操作）: 2026-07-23 ／ スコープ: 「デジタルトレース台」
+> 作成: 2026-07-22 ／ T0.5改修: 2026-07-23 ／ T0.5.1（デザインツール型操作）: 2026-07-23 ／ T0.5.2（R3下絵）: 2026-07-24 ／ T0.5.3（R4全画面・下絵精密）: 2026-07-24 ／ T0.5.4（R5ブラウザ内保存 #19）: 2026-07-30 ／ スコープ: 「デジタルトレース台」
 > 実装スペック正本: `ops/notes/kogin-editor-t0-spec-2026-07-22.md`（夢波リポ側）／ 改修方針: `FEEDBACK.md`
 > ※ 既存 `index.html`（画像→こぎん変換MVP）とは**独立の別ページ**。README.md・既存jsは不変。
 
@@ -55,6 +55,20 @@
 - **下絵の位置を矢印キーで微調整**（#18b）: 「下絵移動」(U) 選択中の矢印キーで `underlay.x/y` を world単位で加算（微＝1 world単位／`Shift`＝1マス＝ZREF）。`underlay` は undo対象外（既存のドラッグ/ホイールと同じ・cellsに影響なし）。
 - 不変: `floatMax=7`・break層・cells/breaksモデル・world単位下絵ジオメトリ（#13）・操作コア。
 
+## T0.5.4 改修サマリー（#19・R5・ブラウザ内保存メニュー）
+
+> 伎海FB 2026-07-30「一度保存したものをメニューから参照できるようにしたい」。データモデル（cells/breaks/floatMax=7）は不変。保存の**置き場所を1つ増やす**だけの変更で、既存のJSONファイル保存/読込・自動保存はそのまま残す。
+
+- **役割分担（UIに明記）**: **JSONファイル＝バックアップ・端末間の持ち出し用** ／ **ブラウザ内保存＝この端末での「すぐの続き」用**。上部リボン「ファイル」に注記（`file-role-note`）を常時表示。
+- **名前を付けて保存**（`btn-save-named`）: 現在の doc（既存JSON保存と同じ `TraceState.serialize` の構造）を localStorage に保存。名前は `prompt` で入力（**既定値＝日時 `YYYY-MM-DD HH:MM`**）。
+- **保存済みを開く…**（`btn-open-library` → モーダル `library-modal`）: 名前・保存日時・マス目・塗り目数・**64px サムネイル**（canvas縮小の PNG dataURL）を新しい順に一覧。サムネ/名前/「開く」クリックで読込。**未保存（名前付き保存以後に編集あり）なら確認ダイアログ**を出す（キャンセルで現状維持）。
+- **一覧から上書き保存・削除**: 各行の「上書き保存」（同idへ保存＝件数は増えない・`createdAt` 維持）と「削除」（本体＋索引の両方）。
+- **注意書き**: モーダル下部（`library-warn`）＋ help.html ⑥に「この端末のこのブラウザだけ／ブラウザのデータ削除で消える／大事な作品はJSONファイル保存も併用」を明記。
+- **容量対策**: サムネは64px・24KB超なら添付しない。保存失敗は**握りつぶさず**「保存できませんでした（容量不足）。古い保存を削除するかJSONファイル保存を使ってください」をメニュー内メッセージ＋ステータスバーに表示（メニューを自動で開く＝その場で削除できる）。途中失敗は巻き戻し（孤児の本体キー・不整合な索引を残さない）。
+- データ構造: 索引 `kogin-trace-library-v1 = {v:1, items:[{id,name,savedAt,createdAt,w,h,cellCount,thumb}]}` ＋ 本体 `kogin-trace-doc-v1:<id>`（serialize文字列）。**索引と本体を分離**＝1件保存で全件を書き直さない。自動保存 `kogin-trace-autosave-v1` とは別キーで併存（自動保存＝起動時の「続きを開く」用のまま）。
+- 操作系への影響: メニュー表示中はキャンバスのショートカットを停止（`Esc`＝メニューを閉じるだけ・背景クリックでも閉じる）。
+- 不変: `floatMax=7`・break層・world単位下絵ジオメトリ・全画面(#17)・操作コア・既存のJSON保存/読込・自動保存。
+
 ## 開き方
 
 ```
@@ -66,7 +80,7 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 
 ## 画面レイアウト（T0.5）
 
-- **上部リボン**（低頻度・「▾ メニュー」で格納可）: ファイル（保存/読込）・表示（ズーム/グリッド線/5目/中心線/濃さ）・検証（統計/float・偶数バッジ/チャート出力）。
+- **上部リボン**（低頻度・「▾ メニュー」で格納可）: ファイル（名前を付けて保存/保存済みを開く…/JSON保存/JSON読込＋役割注記）・表示（ズーム/グリッド線/5目/中心線/濃さ）・検証（統計/float・偶数バッジ/チャート出力）。
 - **左サイド**（高頻度）: ツール一覧・ツール別ヒント・取消/やり直し・全消去・糸色/布地・範囲選択の操作（コピー/一括塗り/一括消し/連続ペースト）。
 - **右サイド**（グリッド設定・下絵）: **折りたたみ既定**。キャンバス上の「⚙ 設定パネル」で開閉。
 - **中央キャンバス**: 右パネルの開閉に応じて可変幅で最大化。
@@ -92,7 +106,7 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 - チャート出力: 記号グリッド＋凡例＋注記を1枚のSVGで生成→印刷（A4縦）/PNG保存。**紙チャートは従来のセル記号のまま**（切れ目は画面表示とfloat検証のみ・要確認事項として保留）。
 - 全消去: 左パネルの「全消去（クリア）」＝確認ダイアログ後に cells と切れ目を全消去（undoで戻せる）。
 - 下絵フィット: 右パネル下絵の「横N目/縦N目に合わせる」＝下絵を指定マス目幅にスケール（縦横比維持）。
-- 保存: 手動=JSONダウンロード、自動=localStorage（各操作後800msデバウンス）。`doc.breaks` も保存/復元（旧JSONは切れ目なしとして後方互換）。
+- 保存: **①JSONファイル**（手動ダウンロード＝バックアップ・端末間の持ち出し）／**②ブラウザ内保存**（#19・「名前を付けて保存」→「保存済みを開く…」の一覧から開く／上書き／削除。この端末のこのブラウザのみ）／**③自動保存**（localStorage・各操作後800msデバウンス＝起動時に「続きを開きますか？」）。`doc.breaks` も保存/復元（旧JSONは切れ目なしとして後方互換）。
 
 ## 切れ目（break）の仕組み（#3/#5・データモデル）
 
@@ -117,6 +131,7 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 ```
 node test/trace-state-test.cjs      # 101 passed（T0.5でbreak層+27／T0.5.1で lineCells +9）
 node test/trace-validate-test.cjs   # 27 passed（T0.5でbreak分割+12）
+node test/trace-library-test.cjs    # 45 passed（R5・#19 ブラウザ内保存の純ロジック。fake storageで容量超過/巻き戻し/索引破損まで）
 ```
 
 ヘッドレスUI（実アプリを MouseEvent 合成＋公開APIで駆動）:
@@ -131,9 +146,12 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 # 出力DOMの <div id="trace-harness-result"> の RESULT:{...} で "ok":true を確認
 #   trace-harness.html        機能ハーネス（ペン/斜線/矩形/チャート/roundtrip＋break E2E）
 #   trace-ui-path-probe.html  範囲操作の導線（T0.5=disabled表示＋ガイド提示・alertゼロ／20チェック）
-#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)・78チェック）
+#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)＋ブラウザ内保存(#19)・124チェック）
 #   trace-focus-css-probe.html 全画面モードのCSS実効を getComputedStyle で検証（本物の editor.css を読込・display:none/1カラム化・13チェック）
+#   trace-library-css-probe.html 保存メニュー（モーダル）のCSS実効を検証（display flex/none・チャートより前面・サムネ64px角・16チェック）
 ```
+
+> #19 のスモークは **localStorage の実物**を使う（`file://` でも Chrome は使える）。前回実行の残りで結果が変わらないよう、ドライバ冒頭で `kogin-trace-*` キーを全削除してから起動する。容量超過は `Storage.prototype.setItem` を一時パッチして quota を throw させて検証（実行後に復元）。
 
 既存テスト（改修後も green を維持）:
 
@@ -151,15 +169,18 @@ editor.html                エディタページ（独立・T0.5でリボン＋3
 css/editor.css             エディタ専用CSS（style.css は触らない・T0.5レイアウト対応）
 js/trace-config.js         全設定・仮値の集約（TRACE_CONFIG）※実色差し替えはここ1ファイル
 js/trace-state.js          ドキュメントモデル・編集純関数・undo/redo・保存・breaks・lineCells補間（Node両用）
+js/trace-library.js        #19 ブラウザ内保存の純ロジック（localStorage注入式・索引/本体分離・容量超過検知・巻き戻し／Node両用）
 js/trace-validate.js       多色ラン抽出（breaks分割）・float/偶数ラン検出・集計（Node両用）
 js/trace-render.js         cells → SVGレイヤ文字列（breaks分割描画＋切れ目マーカー＋hoverCell＋下絵 uf一律スケール/表示ゲート）
 js/trace-chart.js          チャートSVG生成・印刷・PNG書き出し（T0.5では不変）
 js/trace-app.js            配線層（ツール7種・連続塗り/消し・ズーム/パン/スポイト/ショートカット・切れ目/フィット/導線ガード・下絵ズーム一体化(uf)/表示トグル(H)/キャンバスD&D/マス目UI・全画面(F)/下絵スライダー/下絵矢印(#17/#18)・保存）
 test/trace-state-test.cjs      純関数テスト（101・lineCells 補間含む）
 test/trace-validate-test.cjs   純関数テスト（27）
+test/trace-library-test.cjs    純関数テスト（45・#19 保存ライブラリ／fake storage）
 test/trace-harness.html        機能ハーネス（break E2E含む）
 test/trace-ui-path-probe.html  範囲操作の導線プローブ（T0.5導線・20チェック）
 test/gen-editor-smoke.cjs      実editor.html→スモークHTML生成器
-test/trace-editor-smoke.html   生成物（実DOMスモーク・78チェック／操作コア＋下絵ズーム一体化/表示/D&D/マス目/全画面/下絵精密操作）
+test/trace-editor-smoke.html   生成物（実DOMスモーク・124チェック／操作コア＋下絵ズーム一体化/表示/D&D/マス目/全画面/下絵精密操作＋ブラウザ内保存46）
 test/trace-focus-css-probe.html 全画面モードのCSS実効プローブ（editor.css読込・getComputedStyle・13チェック）
+test/trace-library-css-probe.html 保存メニューのCSS実効プローブ（editor.css読込・16チェック）
 ```
