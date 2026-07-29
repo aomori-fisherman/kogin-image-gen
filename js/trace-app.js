@@ -7,7 +7,8 @@
   'use strict';
 
   var CFG = window.TRACE_CONFIG, S = window.TraceState, V = window.TraceValidate,
-      R = window.TraceRender, C = window.TraceChart, IL = window.KoginImageLoader, SAMPLE = window.KoginSample;
+      R = window.TraceRender, C = window.TraceChart, IL = window.KoginImageLoader, SAMPLE = window.KoginSample,
+      LIB = window.TraceLibrary;
   function $(id) { return document.getElementById(id); }
 
   var AUTOSAVE_KEY = 'kogin-trace-autosave-v1';
@@ -45,6 +46,10 @@
   var hoverCell = null;                      // {x,y,kind} ペン/消しゴムのホバーハイライト
   var underlayVisible = true;                // #14 下絵の表示ON/OFF（非表示でもデータは保持）
   var focusMode = false;                     // #17 全画面（フォーカス）モード
+  // #19 ブラウザ内保存（ライブラリ）
+  var libraryOpen = false;                   // 保存メニュー（モーダル）の表示状態
+  var currentLibId = null;                   // いま開いている保存のid（上書き先の目印）
+  var dirty = false;                         // 名前付き保存以後に編集されたか（一覧から開く前の確認に使う）
 
   // #13 下絵は zoom非依存の world単位で保持し、描画時に uf=zoom/ZREF で一律スケールしてグリッドと一体化する。
   function zref() { return CFG.zoom.init || 10; }
@@ -397,6 +402,8 @@
   function onKey(e) {
     var t = e.target, tag = (t && t.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select') { if (e.key === 'Escape' && t.blur) t.blur(); return; }
+    // #19 保存メニュー表示中はキャンバス側のショートカットを止める（Esc=メニューを閉じるだけ）
+    if (libraryOpen) { if (e.key === 'Escape') { closeLibrary(); e.preventDefault(); } return; }
     // Space=パン押下状態（ページスクロール抑止）
     if (e.key === ' ' || e.code === 'Space') { if (!spaceDown) { spaceDown = true; if (!pan && !drag) setSvgCursor('pan'); } e.preventDefault(); return; }
     // Alt=スポイト（カーソルヒントのみ・機能は mousedown の altKey で判定）
@@ -646,22 +653,191 @@
     setStatus('全消去しました');
   }
 
-  // ---- 保存 ----
+  // ---- 保存（ファイル=バックアップ/端末間共有・ブラウザ内=この端末での続き） ----
   function saveJson() {
     cur().updatedAt = nowIso();
     var blob = new Blob([S.serialize(cur())], { type: 'application/json' });
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'kogin-trace-' + stamp() + '.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    dirty = false;
+    setStatus('JSONファイルに保存しました（バックアップ・端末間の持ち出し用）');
   }
   function loadJsonFile(file) {
     var rd = new FileReader();
     rd.onload = function () {
-      try { var d = S.deserialize(rd.result); store.replace(d); selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; syncGridControls(); renderFull(); setStatus('読込完了'); }
+      try {
+        var d = S.deserialize(rd.result); store.replace(d); selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false;
+        currentLibId = null; dirty = false;
+        syncGridControls(); syncUnderlayControls(); renderFull(); setStatus('読込完了');
+      }
       catch (e) { alert('JSON読込失敗: ' + e.message); }
     };
     rd.readAsText(file);
   }
+
+  /* ===== #19 ブラウザ内保存メニュー（localStorage・この端末のこのブラウザだけ） ===== */
+  var QUOTA_MSG = '保存できませんでした（容量不足）。古い保存を削除するかJSONファイル保存を使ってください';
+  var NOSTORE_MSG = 'このブラウザでは内部保存が使えません（プライベートモード等）。「JSONで保存」を使ってください';
+
+  function libStorage() { try { return window.localStorage; } catch (e) { return null; } }
+  function libReady() { var st = libStorage(); return !!(LIB && st && LIB.available(st)); }
+  function libMsg(text, ok) {
+    var el = $('library-msg'); if (!el) return;
+    if (!text) { el.className = 'lib-msg hidden'; el.textContent = ''; return; }
+    el.className = 'lib-msg' + (ok ? ' ok' : ''); el.textContent = text;
+  }
+  function escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function fmtSavedAt(iso) {
+    var d = new Date(iso); if (isNaN(d.getTime())) return String(iso || '');
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '/' + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+  function defaultSaveName() {
+    var d = new Date(); function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  // 一覧用の小サムネイル（既定64px・cellAspect考慮）。localStorage容量を食わないよう最小限で作る。
+  function buildThumb(doc, maxPx) {
+    try {
+      var g = doc.grid, asp = g.cellAspect || 1, px = maxPx || 64;
+      var cvs = document.createElement('canvas'); if (!cvs.getContext) return '';
+      var vw = g.w, vh = g.h * asp, sc = px / Math.max(vw, vh);
+      var cw = Math.max(8, Math.round(vw * sc)), ch = Math.max(8, Math.round(vh * sc));
+      cvs.width = cw; cvs.height = ch;
+      var ctx = cvs.getContext('2d'); if (!ctx) return '';
+      var fab = null;
+      for (var i = 0; i < CFG.FABRICS.length; i++) if (CFG.FABRICS[i].id === doc.fabricId) fab = CFG.FABRICS[i];
+      ctx.fillStyle = fab ? fab.hex : '#1B2440';
+      ctx.fillRect(0, 0, cw, ch);
+      var sx = cw / g.w, sy = ch / g.h, dw = Math.max(1, Math.ceil(sx)), dh = Math.max(1, Math.ceil(sy));
+      for (var y = 0; y < g.h; y++) {
+        var row = doc.cells[y]; if (!row) continue;
+        for (var x = 0; x < g.w; x++) {
+          var v = row[x]; if (v == null) continue;
+          ctx.fillStyle = colorHex(v);
+          ctx.fillRect(Math.floor(x * sx), Math.floor(y * sy), dw, dh);
+        }
+      }
+      var url = cvs.toDataURL('image/png');
+      return url.length > 24000 ? '' : url;   // 想定外に大きければサムネ無しで保存（容量優先）
+    } catch (e) { return ''; }
+  }
+
+  function renderLibraryList() {
+    var ul = $('library-list'); if (!ul) return;
+    var st = libStorage();
+    var items = (LIB && st) ? LIB.list(st) : [];
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i], id = escHtml(it.id);
+      var thumb = it.thumb
+        ? '<img class="lib-thumb" src="' + escHtml(it.thumb) + '" alt="" data-act="open" data-id="' + id + '" title="クリックで開く">'
+        : '<div class="lib-thumb empty" data-act="open" data-id="' + id + '" title="クリックで開く">画像なし</div>';
+      html += '<li class="lib-item" data-id="' + id + '">' + thumb +
+        '<div class="lib-meta">' +
+          '<div class="lib-name" data-act="open" data-id="' + id + '" title="クリックで開く">' + escHtml(it.name) +
+            (it.id === currentLibId ? ' <span class="lib-sub">（開いています）</span>' : '') + '</div>' +
+          '<div class="lib-sub">' + fmtSavedAt(it.savedAt) + '　' + (it.w || '?') + '×' + (it.h || '?') + '目　塗り' + (it.cellCount || 0) + '目</div>' +
+        '</div>' +
+        '<div class="lib-acts">' +
+          '<button class="btn-small" data-act="open" data-id="' + id + '">開く</button>' +
+          '<button class="btn-small" data-act="over" data-id="' + id + '" title="いまの作業でこの保存を上書きします">上書き保存</button>' +
+          '<button class="btn-small danger-outline" data-act="del" data-id="' + id + '">削除</button>' +
+        '</div></li>';
+    }
+    ul.innerHTML = html;
+    if ($('library-empty')) $('library-empty').classList.toggle('hidden', items.length > 0);
+    if ($('library-count')) {
+      var kb = (LIB && st) ? Math.round(LIB.usageBytes(st) / 1024) : 0;
+      $('library-count').textContent = items.length + '件・約' + kb + 'KB';
+    }
+  }
+  function openLibrary() {
+    var m = $('library-modal'); if (!m) return;
+    libMsg('', false);
+    renderLibraryList();
+    m.classList.remove('hidden');
+    libraryOpen = true;
+    if (!libReady()) libMsg(NOSTORE_MSG, false);
+  }
+  function closeLibrary() {
+    var m = $('library-modal'); if (m) m.classList.add('hidden');
+    libraryOpen = false;
+  }
+
+  // 保存（id 省略=新規／id 指定=上書き）。容量超過は握りつぶさずメニューにメッセージ表示。
+  function saveToLibrary(name, id) {
+    if (!libReady()) { openLibrary(); libMsg(NOSTORE_MSG, false); setStatus(NOSTORE_MSG); return { ok: false, reason: 'unavailable' }; }
+    cur().updatedAt = nowIso();
+    var vr = lastVr || analyzeNow();
+    var res = LIB.save(libStorage(), {
+      id: id || null,
+      name: name,
+      docStr: S.serialize(cur()),
+      savedAt: new Date().toISOString(),
+      w: cur().grid.w, h: cur().grid.h,
+      cellCount: vr.cellCount,
+      thumb: buildThumb(cur(), 64)
+    });
+    if (!res.ok) {
+      var msg = res.reason === 'quota' ? QUOTA_MSG : ('保存できませんでした（' + (res.message || res.reason) + '）');
+      openLibrary(); libMsg(msg, false); setStatus(msg);
+      return res;
+    }
+    currentLibId = res.id; dirty = false;
+    var it = LIB.find(libStorage(), res.id);
+    var nm = it ? it.name : String(name);
+    renderLibraryList(); libMsg('保存しました: ' + nm, true);
+    setStatus('ブラウザ内に保存しました: ' + nm + '（この端末のこのブラウザだけに残ります）');
+    return res;
+  }
+  function promptSaveNew() {
+    if (!libReady()) { openLibrary(); libMsg(NOSTORE_MSG, false); return null; }
+    var name = window.prompt('保存する名前（このブラウザの中に保存されます）', defaultSaveName());
+    if (name === null) { setStatus('保存をやめました'); return null; }
+    return saveToLibrary(name, null);
+  }
+  function overwriteLibrary(id) {
+    if (!libReady()) { openLibrary(); libMsg(NOSTORE_MSG, false); return false; }
+    var it = LIB.find(libStorage(), id);
+    if (!it) { libMsg('保存先が見つかりません（削除済みかもしれません）', false); renderLibraryList(); return false; }
+    if (!window.confirm('「' + it.name + '」を、いまの作業で上書きします。よろしいですか？')) { setStatus('上書きをやめました'); return false; }
+    var res = saveToLibrary(it.name, id);
+    return !!(res && res.ok);
+  }
+  function openFromLibrary(id) {
+    if (!libReady()) { openLibrary(); libMsg(NOSTORE_MSG, false); return false; }
+    var it = LIB.find(libStorage(), id);
+    if (dirty && !window.confirm('いまの作業は「名前を付けて保存」されていません。\n開くと、いまの内容は' + (it ? '「' + it.name + '」' : '保存済みデザイン') + 'に置き換わります。開きますか？')) {
+      setStatus('読込をやめました'); return false;
+    }
+    var str = LIB.load(libStorage(), id);
+    if (!str) { libMsg('この保存データが見つかりませんでした（削除済みかもしれません）', false); renderLibraryList(); return false; }
+    var d = null;
+    try { d = S.deserialize(str); }
+    catch (e) { libMsg('読み込めませんでした: ' + e.message, false); return false; }
+    store.replace(d);
+    selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; ghostCells = null;
+    if ($('repeat-form')) $('repeat-form').classList.add('hidden');
+    currentLibId = id; dirty = false;
+    syncGridControls(); syncUnderlayControls(); renderFull(); closeLibrary();
+    setStatus('開きました: ' + (it ? it.name : id));
+    return true;
+  }
+  function deleteFromLibrary(id) {
+    if (!libReady()) { openLibrary(); libMsg(NOSTORE_MSG, false); return false; }
+    var it = LIB.find(libStorage(), id);
+    if (!window.confirm('「' + (it ? it.name : id) + '」を削除します。元に戻せません。よろしいですか？')) { setStatus('削除をやめました'); return false; }
+    var res = LIB.remove(libStorage(), id);
+    if (currentLibId === id) currentLibId = null;
+    renderLibraryList();
+    libMsg(res.ok ? ('削除しました: ' + (it ? it.name : id)) : '削除できませんでした', res.ok);
+    return !!res.ok;
+  }
+
   function scheduleAutosave() {
+    dirty = true;   // #19 名前付き保存に対する未保存フラグ（すべての編集がここを通る）
     if (autosaveTimer) clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(function () {
       try { cur().updatedAt = nowIso(); localStorage.setItem(AUTOSAVE_KEY, S.serialize(cur())); if ($('autosave-status')) $('autosave-status').textContent = '自動保存 ' + new Date().toLocaleTimeString('ja-JP'); } catch (e) {}
@@ -741,6 +917,22 @@
     on('btn-chart', 'click', function () { if (lastVr.floatViolations.length > 0) return; C.open(cur(), lastVr, CFG); });
     on('btn-save', 'click', saveJson);
     on('load-file', 'change', function () { if (this.files && this.files[0]) loadJsonFile(this.files[0]); });
+    // #19 ブラウザ内保存メニュー（名前を付けて保存／一覧から開く・上書き・削除）
+    on('btn-save-named', 'click', function () { promptSaveNew(); });
+    on('btn-open-library', 'click', openLibrary);
+    on('btn-library-close', 'click', closeLibrary);
+    on('btn-library-save-new', 'click', function () { promptSaveNew(); });
+    on('library-modal', 'click', function (e) { if (e.target === this) closeLibrary(); });   // 背景クリックで閉じる
+    on('library-list', 'click', function (e) {
+      var t = e.target;
+      while (t && t !== this && !(t.getAttribute && t.getAttribute('data-act'))) t = t.parentNode;
+      if (!t || t === this || !t.getAttribute) return;
+      var act = t.getAttribute('data-act'), id = t.getAttribute('data-id');
+      if (!act || !id) return;
+      if (act === 'open') openFromLibrary(id);
+      else if (act === 'over') overwriteLibrary(id);
+      else if (act === 'del') deleteFromLibrary(id);
+    });
   }
   function clampInput(id, lo, hi) { var el = $(id); var v = el ? parseInt(el.value, 10) : lo; return clamp(isNaN(v) ? lo : v, lo, hi); }
   // 導線ガード（#11）: 未達なら alert でなく「次の一手」を提示し false を返す。
@@ -767,7 +959,7 @@
   // ---- テスト用API ----
   function exposeTestApi() {
     window.TraceApp = {
-      reset: function (w, h) { store.replace(S.newDoc(w, h)); selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; underlayVisible = true; setActiveColor(activeColor); syncGridControls(); renderFull(); },
+      reset: function (w, h) { store.replace(S.newDoc(w, h)); selection = null; marquee = null; rectSel = null; clip = null; repeatMode = false; underlayVisible = true; currentLibId = null; dirty = false; setActiveColor(activeColor); syncGridControls(); renderFull(); },
       getDoc: function () { return cur(); },
       getVr: function () { return lastVr; },
       cellCount: function () { return lastVr ? lastVr.cellCount : 0; },
@@ -825,7 +1017,22 @@
       setActiveColorForce: setActiveColor,
       rectSel: function () { return rectSel; },
       isDisabledLook: function (id) { var el = $(id); return !!(el && el.classList.contains('is-disabled')); },
-      statusText: function () { return $('canvas-status') ? $('canvas-status').textContent : ''; }
+      statusText: function () { return $('canvas-status') ? $('canvas-status').textContent : ''; },
+      // #19 ブラウザ内保存（ライブラリ）テスト用
+      saveToLibrary: function (name) { return saveToLibrary(name, null); },
+      overwriteLibrary: overwriteLibrary,
+      openFromLibrary: openFromLibrary,
+      deleteFromLibrary: deleteFromLibrary,
+      libraryList: function () { var st = libStorage(); return (LIB && st) ? LIB.list(st) : []; },
+      libraryIsOpen: function () { return libraryOpen; },
+      openLibrary: openLibrary,
+      closeLibrary: closeLibrary,
+      libraryMsg: function () { var el = $('library-msg'); return el ? { text: el.textContent, hidden: el.className.indexOf('hidden') >= 0 } : null; },
+      libraryReady: libReady,
+      isDirty: function () { return dirty; },
+      currentLibId: function () { return currentLibId; },
+      thumbDataURL: function () { return buildThumb(cur(), 64); },
+      saveJson: saveJson
     };
   }
 
@@ -837,6 +1044,7 @@
     store = S.DocStore(start);
     buildPalette(); buildFabricSelect(); buildPresetSelect(); bindControls(); bindCanvas(); bindKeyboard(); wireCanvasDnd();
     setTool(tool); setActiveColor(activeColor); syncGridControls(); syncUnderlayControls();
+    renderLibraryList(); dirty = false;   // #19 保存済み一覧を先に描く（メニューは閉じたまま）／起動直後は未編集扱い
     renderFull(); setStatus('準備完了（すべて仮値・実測後に差し替え）');
     exposeTestApi();
   }
