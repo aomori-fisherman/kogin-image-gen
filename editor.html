@@ -22,9 +22,13 @@
   <div class="rb-group">
     <div class="rb-title">ファイル</div>
     <div class="rb-body">
-      <button class="btn-small" id="btn-save">JSONで保存</button>
-      <label class="file-btn btn-small">JSON読込<input type="file" id="load-file" accept="application/json,.json"></label>
+      <button class="btn-primary btn-slim" id="btn-save-named" title="このブラウザの中に名前を付けて保存（すぐ続きから開けます）">名前を付けて保存</button>
+      <button class="btn-small" id="btn-open-library" title="このブラウザに保存したデザインの一覧から開く">保存済みを開く…</button>
+      <span class="rb-div"></span>
+      <button class="btn-small" id="btn-save" title="JSONファイルとしてダウンロード（バックアップ・他の端末へ持ち出し用）">JSONで保存</button>
+      <label class="file-btn btn-small" title="JSONファイルを読み込む">JSON読込<input type="file" id="load-file" accept="application/json,.json"></label>
     </div>
+    <p class="rb-note" id="file-role-note">ブラウザ内保存＝この端末での続き用（ブラウザのデータ削除で消えます）／JSONファイル＝バックアップ・端末間の持ち出し用</p>
   </div>
 
   <div class="rb-group">
@@ -211,10 +215,35 @@
 
 <div id="trace-chart-overlay"></div>
 
+<!-- ===== #19 ブラウザ内保存メニュー（保存済みデザイン一覧） ===== -->
+<div class="modal-back hidden" id="library-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>保存済みデザイン（このブラウザの中）</h2>
+      <span class="spacer"></span>
+      <button class="btn-ghost" id="btn-library-close" title="閉じる（Esc）">✕ 閉じる</button>
+    </div>
+    <div class="modal-body">
+      <div class="row">
+        <button class="btn-primary btn-slim" id="btn-library-save-new" title="いまの作業に名前を付けて、このブラウザの中に新しく保存します">＋ いまの作業を新規保存…</button>
+        <span class="spacer"></span>
+        <span class="hint" id="library-count">—</span>
+      </div>
+      <p class="lib-msg hidden" id="library-msg"></p>
+      <p class="hint hidden" id="library-empty">まだブラウザ内保存はありません。「＋ いまの作業を新規保存…」で保存すると、ここから開けるようになります。</p>
+      <ul class="lib-list" id="library-list"></ul>
+    </div>
+    <div class="modal-foot">
+      <p class="warn-note" id="library-warn">⚠ ブラウザ内保存は<b>この端末のこのブラウザだけ</b>に残ります。ブラウザのデータ（履歴・サイトデータ）を消すと<b>いっしょに消えます</b>。大事な作品は「JSONで保存」でファイルにも残してください。</p>
+    </div>
+  </div>
+</div>
+
 <script src="js/image-loader.js"></script>
 <script src="js/sample.js"></script>
 <script src="js/trace-config.js"></script>
 <script src="js/trace-state.js"></script>
+<script src="js/trace-library.js"></script>
 <script src="js/trace-validate.js"></script>
 <script src="js/trace-render.js"></script>
 <script src="js/trace-chart.js"></script>
