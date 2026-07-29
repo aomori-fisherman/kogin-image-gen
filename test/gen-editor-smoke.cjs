@@ -4,7 +4,9 @@
    使い方: node test/gen-editor-smoke.cjs → その後ヘッドレスChromeで trace-editor-smoke.html を開く。
    - css リンク除去（ロジック非依存・404ノイズ回避）
    - js の相対パス js/ → ../js/
-   - confirm/alert/localStorage をモックし、末尾にドライバ＋結果divを注入 */
+   - confirm/alert/prompt をモックし、末尾にドライバ＋結果divを注入
+   - localStorage は file:// でも実物が使えるので実物を使う（#19の保存系を本物で検証）。
+     ただし前回実行の残りを消すため kogin-trace-* キーを起動前に全削除する。 */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -19,8 +21,18 @@ const driver = `
 <script>
   window.__alerts = [];
   window.alert = function (m) { window.__alerts.push(String(m)); };
-  window.confirm = function () { return true; };
-  try { window.localStorage.removeItem('kogin-trace-autosave-v1'); } catch (e) {}
+  window.__confirms = [];
+  window.__confirmReply = true;
+  window.confirm = function (m) { window.__confirms.push(String(m)); return window.__confirmReply; };
+  window.__prompts = [];
+  window.__promptReply = undefined;   // undefined=既定値をそのまま採用（＝日時の既定名）
+  window.prompt = function (m, def) { window.__prompts.push(String(m)); return window.__promptReply === undefined ? def : window.__promptReply; };
+  // #19 前回実行の保存データを消してから起動（localStorage は file:// でも実物）
+  try {
+    var __ks = [];
+    for (var __i = 0; __i < window.localStorage.length; __i++) { var __k = window.localStorage.key(__i); if (__k && __k.indexOf('kogin-trace-') === 0) __ks.push(__k); }
+    for (var __j = 0; __j < __ks.length; __j++) window.localStorage.removeItem(__ks[__j]);
+  } catch (e) {}
   window.__initErr = null;
   window.addEventListener('error', function (ev) { if (!window.__initErr) window.__initErr = (ev.message || '') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''); });
 </script>
@@ -265,6 +277,113 @@ function runSmoke() {
     var b3 = TraceApp.underlayWorld();
     checks.s18b_arrow_up_1world = Math.abs((b3.y - b2.y) + 1) < 0.001;
     checks.s18b_cells_unaffected = TraceApp.cellCount() === 0;   // 下絵移動はcellsに影響しない
+
+    // ===== #19 ブラウザ内保存メニュー（R5・localStorage実物で保存/一覧/開く/上書き/削除/容量超過） =====
+    // T-a. UI要素と役割分担の注記（ファイル=バックアップ・端末間／ブラウザ内=この端末での続き）
+    checks.s19_btn_save_named = !!$('btn-save-named');
+    checks.s19_btn_open_library = !!$('btn-open-library');
+    checks.s19_modal_exists = !!$('library-modal') && !!$('library-list') && !!$('btn-library-close');
+    checks.s19_json_kept = !!$('btn-save') && !!$('load-file');                       // 既存のJSON保存/読込は残す
+    var roleNote = $('file-role-note') ? $('file-role-note').textContent : '';
+    checks.s19_role_note = /ブラウザ内保存/.test(roleNote) && /この端末/.test(roleNote) && /JSON/.test(roleNote) && /持ち出し|バックアップ/.test(roleNote);
+    var warnNote = $('library-warn') ? $('library-warn').textContent : '';
+    checks.s19_warn_note = /この端末のこのブラウザ/.test(warnNote) && /消/.test(warnNote) && /JSONで保存/.test(warnNote);
+    checks.s19_storage_ready = TraceApp.libraryReady() === true;
+
+    // T-b. メニューの開閉（初期hidden→開く→空表示→閉じる）
+    TraceApp.reset(12, 4);
+    checks.s19_modal_hidden_default = $('library-modal').classList.contains('hidden') && TraceApp.libraryIsOpen() === false;
+    click('btn-open-library');
+    checks.s19_modal_opens = !$('library-modal').classList.contains('hidden') && TraceApp.libraryIsOpen() === true;
+    checks.s19_empty_note_shown = !$('library-empty').classList.contains('hidden') && TraceApp.libraryList().length === 0;
+    click('btn-library-close');
+    checks.s19_modal_closes = $('library-modal').classList.contains('hidden') && TraceApp.libraryIsOpen() === false;
+
+    // T-c. 名前を付けて保存（既定名=日時）→ 一覧1件・メタ・サムネ・未保存フラグ解除
+    TraceApp.reset(12, 4); TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    md(0, 0); mm(4, 0); mu(4, 0);                          // 5目塗る
+    checks.s19_dirty_after_edit = TraceApp.isDirty() === true;
+    var nPrompts = window.__prompts.length;
+    click('btn-save-named');                                // prompt既定値（日時）で保存
+    var lst = TraceApp.libraryList();
+    checks.s19_prompted = window.__prompts.length === nPrompts + 1;
+    checks.s19_saved_one = lst.length === 1;
+    checks.s19_default_name_datetime = lst.length === 1 && /^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$/.test(lst[0].name);
+    checks.s19_meta_saved = lst.length === 1 && lst[0].w === 12 && lst[0].h === 4 && lst[0].cellCount === 5;
+    checks.s19_thumb_dataurl = lst.length === 1 && /^data:image\\/png;base64,/.test(lst[0].thumb || '') && lst[0].thumb.length < 24000;
+    checks.s19_thumb_in_dom = !!document.querySelector('#library-list img.lib-thumb');
+    checks.s19_clean_after_save = TraceApp.isDirty() === false && TraceApp.currentLibId() === lst[0].id;
+    var savedId = lst.length === 1 ? lst[0].id : null;
+
+    // T-d. 一覧クリック（実DOMのボタン）で開く → 保存時の内容に戻る・メニューは閉じる
+    TraceApp.reset(30, 20);                                 // 別状態（12×4→30×20・塗り0）
+    checks.s19_reset_state = TraceApp.cellCount() === 0 && TraceApp.getDoc().grid.w === 30;
+    TraceApp.openLibrary();
+    var openBtn = document.querySelector('#library-list button[data-act="open"][data-id="' + savedId + '"]');
+    checks.s19_open_btn_in_dom = !!openBtn;
+    openBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    checks.s19_opened_cells = TraceApp.cellCount() === 5 && TraceApp.cellAt(0, 0) === 'r01' && TraceApp.cellAt(4, 0) === 'r01';
+    checks.s19_opened_grid = TraceApp.getDoc().grid.w === 12 && TraceApp.getDoc().grid.h === 4;
+    checks.s19_modal_closed_after_open = $('library-modal').classList.contains('hidden');
+    checks.s19_clean_after_open = TraceApp.isDirty() === false;
+
+    // T-e. 未保存の作業がある状態で開く → 確認が出る／キャンセルなら現状維持
+    md(6, 2); mm(8, 2); mu(8, 2);                           // 3目追加（未保存）
+    checks.s19_dirty_again = TraceApp.isDirty() === true && TraceApp.cellCount() === 8;
+    var nConf = window.__confirms.length;
+    window.__confirmReply = false;
+    var openedWhenCancelled = TraceApp.openFromLibrary(savedId);
+    window.__confirmReply = true;
+    var lastConf = window.__confirms[window.__confirms.length - 1] || '';
+    checks.s19_confirm_asked = window.__confirms.length === nConf + 1 && /名前を付けて保存/.test(lastConf) && /置き換わ/.test(lastConf);
+    checks.s19_cancel_keeps_work = openedWhenCancelled === false && TraceApp.cellCount() === 8 && TraceApp.isDirty() === true;
+    checks.s19_confirm_ok_opens = TraceApp.openFromLibrary(savedId) === true && TraceApp.cellCount() === 5;
+
+    // T-f. 上書き保存（一覧の「上書き保存」ボタン）→ 件数は増えず、本体が新しい方になる
+    md(1, 3); mm(3, 3); mu(3, 3);                           // 3目追加（計8目）
+    checks.s19_before_overwrite = TraceApp.cellCount() === 8;
+    TraceApp.openLibrary();
+    var overBtn = document.querySelector('#library-list button[data-act="over"][data-id="' + savedId + '"]');
+    checks.s19_over_btn_in_dom = !!overBtn;
+    overBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    checks.s19_overwrite_no_dup = TraceApp.libraryList().length === 1;
+    checks.s19_overwrite_meta = TraceApp.libraryList()[0].cellCount === 8;
+    TraceApp.reset(12, 4);
+    checks.s19_overwrite_body = TraceApp.openFromLibrary(savedId) === true && TraceApp.cellCount() === 8;
+
+    // T-g. 容量超過: setItem を quota で失敗させ、握りつぶさずメッセージ表示・一覧は増えない
+    TraceApp.reset(12, 4); TraceApp.setTool('pen'); TraceApp.setActiveColor('b01');
+    md(0, 0); mm(2, 0); mu(2, 0);
+    var realSet = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k, v) {
+      if (String(k).indexOf('kogin-trace-') === 0) { var er = new Error('quota'); er.name = 'QuotaExceededError'; throw er; }
+      return realSet.apply(this, arguments);
+    };
+    var qres = TraceApp.saveToLibrary('容量テスト');
+    Storage.prototype.setItem = realSet;
+    var lm = TraceApp.libraryMsg();
+    checks.s19_quota_not_ok = !!qres && qres.ok === false && qres.reason === 'quota';
+    checks.s19_quota_msg_shown = !!lm && lm.hidden === false && /容量不足/.test(lm.text) && /JSONファイル保存/.test(lm.text);
+    checks.s19_quota_modal_opened = TraceApp.libraryIsOpen() === true;
+    checks.s19_quota_no_new_item = TraceApp.libraryList().length === 1;
+    checks.s19_quota_status = /容量不足/.test(TraceApp.statusText());
+
+    // T-h. メニュー表示中はキャンバスのショートカットを止める／Escで閉じる
+    TraceApp.setTool('pen'); TraceApp.openLibrary();
+    key('e'); checks.s19_shortcut_blocked = TraceApp.getTool() === 'pen';
+    key('Escape');
+    checks.s19_esc_closes = TraceApp.libraryIsOpen() === false && $('library-modal').classList.contains('hidden');
+    checks.s19_tool_kept_after_esc = TraceApp.getTool() === 'pen';
+
+    // T-i. 削除（一覧の「削除」ボタン）→ 0件・空表示に戻る
+    TraceApp.openLibrary();
+    var delBtn = document.querySelector('#library-list button[data-act="del"][data-id="' + savedId + '"]');
+    checks.s19_del_btn_in_dom = !!delBtn;
+    delBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    checks.s19_deleted = TraceApp.libraryList().length === 0;
+    checks.s19_deleted_dom_empty = document.querySelectorAll('#library-list .lib-item').length === 0 && !$('library-empty').classList.contains('hidden');
+    checks.s19_deleted_body_gone = TraceApp.openFromLibrary(savedId) === false;
+    TraceApp.closeLibrary();
 
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks, alerts: window.__alerts, initErr: window.__initErr });

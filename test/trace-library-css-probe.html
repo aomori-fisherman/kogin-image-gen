@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<!-- #19 ブラウザ内保存メニュー（モーダル）の CSS 実効を getComputedStyle で検証する軽量プローブ。
+     gen-editor-smoke は CSS を剥がすため display/寸法の実効はそこでは測れない。
+     ここでは本物の css/editor.css を読み込み、
+     ・.modal-back.hidden → display:none ／ hidden除去 → flex（画面中央のオーバーレイ）
+     ・チャートオーバーレイ(z-index 50)より前面に出る（z-index 60）
+     ・サムネは 64px 角（仕様の「小サムネイル64px程度」）
+     ・警告文（この端末のみ）が警告色で出る
+     を実測する。セレクタはフラット指定なので最小DOMで再現できる。 -->
+<link rel="stylesheet" href="../css/editor.css">
+</head>
+<body>
+<div class="ribbon">
+  <div class="rb-group">
+    <div class="rb-body"><button class="btn-primary btn-slim">名前を付けて保存</button><span class="rb-div"></span><button class="btn-small">JSONで保存</button></div>
+    <p class="rb-note" id="file-role-note">ブラウザ内保存／JSONファイル</p>
+  </div>
+</div>
+<div id="trace-chart-overlay"></div>
+<div class="modal-back hidden" id="library-modal">
+  <div class="modal-card">
+    <div class="modal-head"><h2>保存済みデザイン</h2><span class="spacer"></span><button class="btn-ghost">閉じる</button></div>
+    <div class="modal-body">
+      <p class="lib-msg hidden" id="library-msg">msg</p>
+      <ul class="lib-list" id="library-list">
+        <li class="lib-item"><div class="lib-thumb empty">画像なし</div><div class="lib-meta"><div class="lib-name">名前</div><div class="lib-sub">日時</div></div><div class="lib-acts"><button class="btn-small">開く</button></div></li>
+      </ul>
+    </div>
+    <div class="modal-foot"><p class="warn-note" id="library-warn">この端末のこのブラウザだけ</p></div>
+  </div>
+</div>
+
+<div id="trace-harness-result">PENDING</div>
+<script>
+function run() {
+  var out = document.getElementById('trace-harness-result');
+  function done(o) { out.textContent = 'RESULT:' + JSON.stringify(o); }
+  function cs(sel) { return getComputedStyle(document.querySelector(sel)); }
+  try {
+    var checks = {};
+    // 既定は非表示（作業を邪魔しない）
+    checks.modal_hidden_default = cs('#library-modal').display === 'none';
+    // 表示するとオーバーレイとして中央に出る
+    document.getElementById('library-modal').classList.remove('hidden');
+    var m = cs('#library-modal');
+    checks.modal_shown_flex = m.display === 'flex';
+    checks.modal_fixed = m.position === 'fixed';
+    checks.modal_centered = m.alignItems === 'center' && m.justifyContent === 'center';
+    checks.modal_above_chart = parseInt(m.zIndex, 10) > parseInt(cs('#trace-chart-overlay').zIndex, 10);
+    checks.card_shown = cs('.modal-card').display === 'flex';
+    // サムネは 64px 角（一覧が軽いままであること＝容量対策の見た目側）
+    var th = cs('.lib-thumb');
+    checks.thumb_64px = th.width === '64px' && th.height === '64px';
+    checks.item_row = cs('.lib-item').display === 'flex';
+    checks.list_no_bullets = cs('.lib-list').listStyleType === 'none';
+    // メッセージ欄は hidden で消え、外すと出る（容量不足を握りつぶさず見せる枠）
+    checks.msg_hidden_default = cs('#library-msg').display === 'none';
+    document.getElementById('library-msg').classList.remove('hidden');
+    checks.msg_shown = cs('#library-msg').display !== 'none';
+    // 注意書き（この端末のみ）は警告色で出る
+    var wn = cs('#library-warn');
+    checks.warn_shown = wn.display !== 'none';
+    checks.warn_colored = wn.color !== 'rgb(230, 235, 240)' && wn.color !== 'rgba(0, 0, 0, 0)';
+    // ファイル群の役割注記は表示され、本文より小さい字（リボンを膨らませない）
+    var rn = cs('#file-role-note');
+    checks.role_note_shown = rn.display !== 'none';
+    checks.role_note_small = parseFloat(rn.fontSize) < parseFloat(cs('body').fontSize);
+    // 閉じると元に戻る
+    document.getElementById('library-modal').classList.add('hidden');
+    checks.modal_hides_again = cs('#library-modal').display === 'none';
+    var ok = Object.keys(checks).every(function (k) { return checks[k]; });
+    done({ ok: ok, checks: checks });
+  } catch (e) { done({ ok: false, error: (e && e.message) || String(e) }); }
+}
+if (document.readyState === 'complete') run(); else window.addEventListener('load', run);
+</script>
+</body>
+</html>
