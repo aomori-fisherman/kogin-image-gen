@@ -67,7 +67,7 @@ function runSmoke() {
     checks.b_repeat_steps = !!$('repeat-steps');
     checks.b_help_button = !!$('btn-help');   // 「？使い方」ボタン（help.html へのリンク）
     // C. ツール名称の差別化（#11）
-    checks.c_name_run = /ラン選択/.test($('tool-select').textContent);
+    checks.c_name_run = /ラン選択/.test($('tool-select').textContent);   // 左パネルのラン選択ボタン（id=tool-select）
     checks.c_name_rect = /矩形選択/.test($('tool-rect').textContent);
 
     // D. 右パネル既定は折りたたみ（collapsed）
@@ -249,6 +249,36 @@ function runSmoke() {
     checks.s17_tool_kept_after_esc = TraceApp.getTool() === 'eraser';
     click('btn-focus-toggle'); checks.s17_on_after_btn = TraceApp.focusMode() === true;
     click('btn-focus-toggle'); checks.s17_off_after_btn = TraceApp.focusMode() === false;
+
+    // ===== #20 キャンバス上部バーのツール選択（R6・全画面/通常で同じ場所・既存setTool再利用） =====
+    function pick(v) { var s = $('tool-picker'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }
+    TraceApp.reset(12, 4); TraceApp.setTool('pen');
+    checks.s20_select_exists = !!$('tool-picker');
+    checks.s20_no_floating_palette = !document.getElementById('focus-tools') && document.querySelectorAll('.ft-btn').length === 0;   // 旧フローティングは撤去済み
+    checks.s20_in_toolbar = !!document.querySelector('.canvas-toolbar #tool-picker');   // 元から場所を取っていた枠の中（方眼を新たに覆わない）
+    var opts = $('tool-picker').options;
+    checks.s20_options_all_tools = opts.length === 7 && opts[0].value === 'pen' && $('tool-picker').querySelector('option[value=eraser]') !== null;
+    checks.s20_option_labels = /ペン/.test(opts[0].textContent) && /P/.test(opts[0].textContent);   // ツール名＋キー併記
+    checks.s20_value_is_current = $('tool-picker').value === 'pen';                    // 選択中＝現在ツール（旧 cur-tool-name の役割）
+    // 通常モード: 選択でツールが切り替わり、実際に塗れる／消せる
+    pick('eraser'); checks.s20_pick_eraser = TraceApp.getTool() === 'eraser';
+    pick('pen'); md(2, 1); mm(6, 1); mu(6, 1);
+    checks.s20_paint_after_pick = TraceApp.getTool() === 'pen' && TraceApp.cellCount() === 5;
+    pick('eraser'); md(4, 1); mm(6, 1); mu(6, 1);
+    checks.s20_erase_after_pick = TraceApp.cellCount() === 2;                          // 5→2＝消しゴムが効いている
+    // ショートカットは従来どおり（selectにフォーカスが残らない＝blur済み）＋selectの表示も追従
+    key('p');
+    checks.s20_shortcut_still_works = TraceApp.getTool() === 'pen' && $('tool-picker').value === 'pen';
+    key('u'); checks.s20_select_follows_key = $('tool-picker').value === 'underlay';
+    // 全画面でも同じ要素・同じ操作（.canvas-toolbar は focus-mode でも残る）
+    key('f'); checks.s20_focus_on = TraceApp.focusMode() === true;
+    checks.s20_select_alive_in_focus = !!$('tool-picker') && document.body.contains($('tool-picker'));
+    pick('eraser'); checks.s20_pick_in_focus = TraceApp.getTool() === 'eraser' && $('tool-picker').value === 'eraser';
+    pick('rect');   // 全画面中の範囲選択は無効化せず、次の一手をステータスで案内する
+    checks.s20_rect_hint_in_focus = TraceApp.getTool() === 'rect' && /Esc/.test($('canvas-status').textContent);
+    pick('pen');
+    key('Escape'); checks.s20_focus_off = TraceApp.focusMode() === false && $('tool-picker').value === 'pen';
+    TraceApp.reset(12, 4);
 
     // ===== #18(a) 下絵の大きさスライダー（R4・world単位・中心保持・zoom非依存） =====
     TraceApp.reset(40, 30); TraceApp.zoomReset100(); TraceApp.setUnderlayTest(200, 120, 1);

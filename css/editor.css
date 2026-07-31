@@ -73,6 +73,22 @@ body.focus-mode .ws-canvas { border-radius: 0; }
 body.focus-mode .canvas-wrap { max-height: calc(100vh - 84px); }
 .btn-ghost.active-focus { border-color: var(--accent); color: var(--text); }
 
+/* ---- ツール選択（#20）: キャンバス上部バーの「ツール:」表示を選択UIに置き換え ---- */
+/* 元から現在ツール名の表示に取っていた場所＝方眼を新たに覆わない。
+   .canvas-toolbar は body.focus-mode でも残るので、全画面でも通常でも同じ場所・同じ操作。 */
+.tool-pick { display: flex; align-items: center; gap: 6px; }
+.tool-pick .tp-lbl { font-size: 11px; color: var(--text-dim); }
+/* 指で押せる大きさ（高さ40px以上・幅は最長のツール名が入る幅）。selectの共通ルール(width:100%)を上書き。 */
+#tool-picker {
+  width: auto; min-width: 132px; min-height: 40px;
+  padding: 6px 10px; font-size: 13px; font-weight: 700;
+  color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--accent); border-radius: 8px;
+  cursor: pointer; touch-action: manipulation;
+}
+#tool-picker:hover { filter: brightness(1.1); }
+#tool-picker:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* ---- パネル共通 ---- */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
 .panel h2 { font-size: 12px; margin: 0 0 8px; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: 5px; }

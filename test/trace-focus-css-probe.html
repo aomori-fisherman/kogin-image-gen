@@ -14,7 +14,17 @@
 <div class="ribbon">ribbon</div>
 <div class="ws">
   <aside class="ws-left">left</aside>
-  <main class="ws-canvas">canvas</main>
+  <main class="ws-canvas">
+    <!-- #20 ツール選択はキャンバス上部バーの中（全画面でもこのバーは残る＝同じ場所で操作できる） -->
+    <div class="canvas-toolbar">
+      <label class="tool-pick"><span class="tp-lbl">ツール</span>
+        <select id="tool-picker"><option value="pen">ペン（塗り）［P］</option><option value="eraser">消しゴム［E］</option></select>
+      </label>
+      <span class="spacer"></span>
+      <button class="btn-ghost" id="btn-focus-toggle">⛶ 全画面</button>
+    </div>
+    <div class="canvas-wrap">canvas</div>
+  </main>
   <aside class="ws-right">right</aside>
 </div>
 
@@ -33,6 +43,9 @@ function run() {
     checks.normal_left_shown = disp('.ws-left') !== 'none';
     checks.normal_right_shown = disp('.ws-right') !== 'none';
     checks.normal_ws_3col = cols('.ws') === 3;
+    // #20 ツール選択は通常モードから見えている（全画面でも同じ場所＝覚え直し不要）
+    checks.normal_toolbar_shown = disp('.canvas-toolbar') !== 'none';
+    checks.normal_tool_select_shown = disp('#tool-picker') !== 'none';
     // 全画面時: focus-mode でヘッダ・リボン・左右パネルが display:none、.ws は1カラム
     document.body.classList.add('focus-mode');
     checks.focus_header_hidden = disp('.ed-header') === 'none';
@@ -41,10 +54,23 @@ function run() {
     checks.focus_right_hidden = disp('.ws-right') === 'none';
     checks.focus_canvas_shown = disp('.ws-canvas') !== 'none';   // キャンバスは残る
     checks.focus_ws_1col = cols('.ws') === 1;
+    // #20 全画面でも上部バーとツール選択は生き残る（同じ場所・同じ操作）
+    checks.focus_toolbar_shown = disp('.canvas-toolbar') !== 'none';
+    checks.focus_tool_select_shown = disp('#tool-picker') !== 'none';
+    var tsS = getComputedStyle(document.querySelector('#tool-picker'));
+    checks.focus_tool_select_in_flow = tsS.position === 'static';    // 浮かせない＝方眼を覆う要素を増やさない
+    checks.focus_tool_select_tap = parseFloat(tsS.minHeight) >= 40;  // 指で押せる高さ
+    // 方眼の上に重なる要素（position:absolute/fixed）を .ws-canvas 配下に増やしていない（D&Dヒントは hidden 前提の既存分のみ）
+    var over = 0, kids = document.querySelectorAll('.ws-canvas *');
+    for (var i = 0; i < kids.length; i++) { var p = getComputedStyle(kids[i]).position; if (p === 'absolute' || p === 'fixed') over++; }
+    checks.focus_no_new_overlay = over === 0;
+    var wrapS = getComputedStyle(document.querySelector('.canvas-wrap'));
+    checks.focus_canvas_wrap_shown = wrapS.display !== 'none';
     // 解除で元に戻る
     document.body.classList.remove('focus-mode');
     checks.restore_ribbon_shown = disp('.ribbon') !== 'none';
     checks.restore_ws_3col = cols('.ws') === 3;
+    checks.restore_tool_select_shown = disp('#tool-picker') !== 'none';   // #20 解除後も同じ場所に残る
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks });
   } catch (e) { done({ ok: false, error: (e && e.message) || String(e) }); }

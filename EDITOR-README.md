@@ -1,6 +1,6 @@
 # こぎんトレース台エディタ T0.5（editor.html）
 
-> 作成: 2026-07-22 ／ T0.5改修: 2026-07-23 ／ T0.5.1（デザインツール型操作）: 2026-07-23 ／ T0.5.2（R3下絵）: 2026-07-24 ／ T0.5.3（R4全画面・下絵精密）: 2026-07-24 ／ T0.5.4（R5ブラウザ内保存 #19）: 2026-07-30 ／ スコープ: 「デジタルトレース台」
+> 作成: 2026-07-22 ／ T0.5改修: 2026-07-23 ／ T0.5.1（デザインツール型操作）: 2026-07-23 ／ T0.5.2（R3下絵）: 2026-07-24 ／ T0.5.3（R4全画面・下絵精密）: 2026-07-24 ／ T0.5.4（R5ブラウザ内保存 #19）: 2026-07-30 ／ T0.5.5（R6全画面中のツール切替 #20）: 2026-07-31 ／ スコープ: 「デジタルトレース台」
 > 実装スペック正本: `ops/notes/kogin-editor-t0-spec-2026-07-22.md`（夢波リポ側）／ 改修方針: `FEEDBACK.md`
 > ※ 既存 `index.html`（画像→こぎん変換MVP）とは**独立の別ページ**。README.md・既存jsは不変。
 
@@ -69,6 +69,23 @@
 - 操作系への影響: メニュー表示中はキャンバスのショートカットを停止（`Esc`＝メニューを閉じるだけ・背景クリックでも閉じる）。
 - 不変: `floatMax=7`・break層・world単位下絵ジオメトリ・全画面(#17)・操作コア・既存のJSON保存/読込・自動保存。
 
+## T0.5.5 改修サマリー（#20・R6・全画面中のツール切替）
+
+> 池田さん（現場）FB 2026-07-31「全画面にするとツールのボタンが全部消える」。使うのは福祉事業所の利用者・職員＝
+> キーボードショートカット前提にできない。データモデル（cells/breaks/floatMax=7）もキャンバス寸法計算も不変。
+
+- **`.canvas-toolbar` の「ツール: ペン」表示を選択UIに置き換えた**（`select#tool-picker`）。あのバーは `body.focus-mode` でも
+  残る（実測 display:flex・位置[54,21]）ので、**全画面でも通常でも同じ場所・同じ操作**になる。
+- **方眼を新たに覆う面積はゼロ**: 元から現在ツール名の表示に場所を取っていた枠をそのまま使っている。
+  左上フローティングパレット案（`#focus-tools`）は**方眼に被る（実測74×194px）ため伎海裁定で却下**（経緯は FEEDBACK.md §10）。
+- **切替ロジックは新設しない**: `change` で既存 `setTool` を呼ぶだけ。逆に `setTool` 側で select の value を同期するので、
+  **キーボードで切り替えても表示が追従**する（どの経路でも一致）。
+- **載せるツールは7種すべて**: option に「ペン［P］」の形でショートカットキーを併記。全画面中にラン選択・矩形選択を選んだ場合は
+  範囲操作パネルが隠れているため、**無効化せずステータスバーで「Esc で全画面を抜けると左パネルに出ます」と案内**する。
+- **ショートカットを殺さない**: 選択後に `blur()`。入力欄フォーカス中は `onKey` が無効化されるため、フォーカスを残すと P/E/F/Esc・Space が死ぬ。
+- **タップ領域**: `min-height:40px` / `min-width:132px`（select 共通の `width:100%` を `width:auto` で上書き）。
+- 不変: `floatMax=7`・break層・world単位下絵ジオメトリ・全画面(#17)・保存(#19)・**ショートカット全種（P/D/E/R/M/U/B・F・Esc・H・Ctrl+Z/Y）**。
+
 ## 開き方
 
 ```
@@ -99,7 +116,7 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 
 - 取消/やり直し: Ctrl+Z / Ctrl+Y（ボタンも有り）。入力欄フォーカス中はショートカット無効。
 - ズーム: ホイール（カーソル中心）／リボンの `100%`・`全体表示`。パン: Space+ドラッグ・中ボタンドラッグ（どのツールでも）。スポイト: Alt+クリック。**Esc: 進行中操作をキャンセルして既定ツール（ペン）へ**（全画面中はまず全画面を解除）。
-- **全画面（フォーカス）**（#17）: `F`／「⛶ 全画面」ボタンでリボン・左右パネルを隠しキャンバス最大化。`Esc`/`F` で戻る（全画面中もツール/ズーム/パン/undo有効）。
+- **全画面（フォーカス）**（#17）: `F`／「⛶ 全画面」ボタンでリボン・左右パネルを隠しキャンバス最大化。`Esc`/`F` で戻る（全画面中もツール/ズーム/パン/undo有効）。**全画面中もキャンバス上部バーの選択UIでツールを切り替えられる**（#20・`select#tool-picker`・キーボード不要）。
 - 下絵の精密操作（#18）: 右パネル下絵の**大きさスライダー**（横N目相当・中心保持で連続拡縮）＋「下絵移動」(U)中の**矢印キー**で位置微調整（Shiftで1マス＝ZREF・cellsに影響なし）。
 - 奇数スナップ（既定OFF）: 偶数長ランを1目伸縮して奇数に寄せる補助。
 - 検証パネル: 総目数/渡り本数/使用色/最長渡り/`float>7`箇所（赤・**チャート不可**）/偶数ラン箇所（黄・警告のみ）。**切れ目で分割したランは分割後の長さで判定**（8目→切れ目→4+4で違反解消）。
@@ -146,8 +163,8 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 # 出力DOMの <div id="trace-harness-result"> の RESULT:{...} で "ok":true を確認
 #   trace-harness.html        機能ハーネス（ペン/斜線/矩形/チャート/roundtrip＋break E2E）
 #   trace-ui-path-probe.html  範囲操作の導線（T0.5=disabled表示＋ガイド提示・alertゼロ／20チェック）
-#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)＋ブラウザ内保存(#19)・124チェック）
-#   trace-focus-css-probe.html 全画面モードのCSS実効を getComputedStyle で検証（本物の editor.css を読込・display:none/1カラム化・13チェック）
+#   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)＋ブラウザ内保存(#19)＋ツール切替select(#20)・140チェック）
+#   trace-focus-css-probe.html 全画面モードのCSS実効を getComputedStyle で検証（本物の editor.css を読込・display:none/1カラム化＋#20 selectの表示/実効スタイル・22チェック）
 #   trace-library-css-probe.html 保存メニュー（モーダル）のCSS実効を検証（display flex/none・チャートより前面・サムネ64px角・16チェック）
 ```
 
@@ -180,7 +197,22 @@ test/trace-library-test.cjs    純関数テスト（45・#19 保存ライブラ�
 test/trace-harness.html        機能ハーネス（break E2E含む）
 test/trace-ui-path-probe.html  範囲操作の導線プローブ（T0.5導線・20チェック）
 test/gen-editor-smoke.cjs      実editor.html→スモークHTML生成器
-test/trace-editor-smoke.html   生成物（実DOMスモーク・124チェック／操作コア＋下絵ズーム一体化/表示/D&D/マス目/全画面/下絵精密操作＋ブラウザ内保存46）
-test/trace-focus-css-probe.html 全画面モードのCSS実効プローブ（editor.css読込・getComputedStyle・13チェック）
+test/trace-editor-smoke.html   生成物（実DOMスモーク・140チェック／操作コア＋下絵ズーム一体化/表示/D&D/マス目/全画面/下絵精密操作＋ブラウザ内保存46＋ツール切替select16）
+test/trace-focus-css-probe.html 全画面モードのCSS実効プローブ（editor.css読込・getComputedStyle・21チェック）
 test/trace-library-css-probe.html 保存メニューのCSS実効プローブ（editor.css読込・16チェック）
 ```
+
+## ⚠ リポジトリ移管時の必須手順（localStorage はドメイン単位）
+
+「保存済みを開く…」のブラウザ内保存は **localStorage**（キー `kogin-trace-library-v1` / `kogin-trace-doc-v1:<id>`）に入る。
+localStorage は **オリジン（ドメイン）単位で分離**されるため、リポジトリを別アカウントへ移管して
+公開URLが変わる（例: `aomori-fisherman.github.io` → `heartspot.github.io`）と、
+**旧URLで保存した図案は新URLから一切見えなくなる**（データ自体は旧オリジンに残るが到達不能）。
+
+移管する場合の手順:
+1. 移管前に、利用者（池田さん等）に **全図案を「JSONで保存」でファイル書き出し**してもらう
+2. 移管・URL変更を実施
+3. 新URLで **「JSON読込」から復元**してもらう
+
+この手順を飛ばすと利用者の作業が全損する。2026-07-30 時点では **kogin-image-gen は移管対象外**
+（移管したのは heartspot-catalog のみ）＝公開URLは `aomori-fisherman.github.io/kogin-image-gen/editor.html` で不変。

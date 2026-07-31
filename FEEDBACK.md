@@ -288,4 +288,58 @@
 - **実装結果（2026-07-30・master）**: `js/trace-library.js`（新規・save/load/list/find/remove/usageBytes/available/isQuotaError・索引破損時は空扱いで死なない）＋ `trace-app.js` に配線（`saveToLibrary`/`promptSaveNew`/`openFromLibrary`/`overwriteLibrary`/`deleteFromLibrary`/`renderLibraryList`/`buildThumb`＝canvas 64px PNG・24KB超なら添付しない）。メニュー表示中はキャンバスのショートカットを停止し `Esc`／背景クリックで閉じる。editor.html にリボン2ボタン＋`file-role-note`＋モーダル、editor.css に `.modal-back`/`.lib-*`/`.rb-note`、help.html に⑥「保存のしかた（2種類あります）」＋トラブル2項目を追記。
 - **既存機能は不変**: JSONで保存/JSON読込・自動保存・チャート出力・全画面・下絵まわり・cells/breaks/floatMax=7。
 
-**R5 検証記録（2026-07-30・master）**: 純関数 state 101・validate 27・**library 45（新規）**／ヘッドレス trace-harness 28・trace-ui-path-probe 20・trace-focus-css-probe 13・**trace-editor-smoke 124（R4の78＋R5の46＝要素/役割注記/開閉/名前付き保存/既定名=日時/メタ/サムネdataURL/一覧DOM/開く/未保存確認とキャンセル/上書き/容量超過メッセージ/ショートカット停止/Esc/削除）**・**trace-library-css-probe 16（新規・モーダルの display・チャートより前面・サムネ64px角・注記の実効）**＝**全green**。既存の画像パイプライン（algo 12・producible 3320・pipeline violations 0・harness ok:true）も維持。実 `editor.html` をヘッドレスで直接読み込み、`canvas-status=準備完了`・`library-count=0件・約0KB`（＝実 localStorage で索引読み出しが動作）を確認。**push はしない**（伎海の実機目視後に main が push）。
+**R5 検証記録（2026-07-30・master）**（→ R6 は本ファイル末尾の第10章）: 純関数 state 101・validate 27・**library 45（新規）**／ヘッドレス trace-harness 28・trace-ui-path-probe 20・trace-focus-css-probe 13・**trace-editor-smoke 124（R4の78＋R5の46＝要素/役割注記/開閉/名前付き保存/既定名=日時/メタ/サムネdataURL/一覧DOM/開く/未保存確認とキャンセル/上書き/容量超過メッセージ/ショートカット停止/Esc/削除）**・**trace-library-css-probe 16（新規・モーダルの display・チャートより前面・サムネ64px角・注記の実効）**＝**全green**。既存の画像パイプライン（algo 12・producible 3320・pipeline violations 0・harness ok:true）も維持。実 `editor.html` をヘッドレスで直接読み込み、`canvas-status=準備完了`・`library-count=0件・約0KB`（＝実 localStorage で索引読み出しが動作）を確認。**push はしない**（伎海の実機目視後に main が push）。
+
+---
+
+## 10. ラウンド6 — 全画面中のツール切替パレット（#20・池田さんFB 2026-07-31）
+
+> 現場（池田さん側）の要望。R5までの構造（world単位下絵・break層・操作コア・全画面・保存）を壊さず、
+> vanilla JS・依存追加なし・floatMax=7不変・データモデル不変で実装。
+
+### #20 全画面（フォーカス）モード中もツールを切り替えたい — T0.5.5（R6で実装）
+- 課題: 全画面は `body.focus-mode` で `.ed-header`/`.ribbon`/`.ws-left`/`.ws-right` を `display:none` にする実装（#17）。
+  そのため**左パネルのツールボタンが全部消える**。P/E などのショートカットを知っていれば切り替えられるが、
+  実際に使うのは福祉事業所の利用者・職員＝**キーボードショートカット前提にはできない**（知らないと詰む）。
+- 要望: 全画面中もツールを切り替えられるようにする。最低限ペンと消しゴム。
+  詰め込みすぎない・現在ツールが見て分かる・キャンバス操作を邪魔しない・指で押せるタップ領域。
+
+#### 却下された第1案: 左上フローティングパレット（2026-07-31・伎海裁定で破棄）
+- 案: `main.ws-canvas`（`position:relative`）の中に `#focus-tools` を追加し `position:absolute` で左上に浮かせる。
+  ペン(P)／消しゴム(E)／下絵移動(U) の3ボタン。表示切替は `body.focus-mode .focus-tools { display:flex }` のCSSのみ。
+- **却下理由＝方眼（キャンバス）に被る。** 実測 74×194px の領域を新たに覆う。トレース台として板の面積を削るのは
+  本末転倒という判断（伎海）。
+- **この経緯を残す理由**: 同じ案を再提案しないため。「全画面中にUIを足す」と考えると左上フローティングが真っ先に出るが、
+  この製品では**新たに覆う面積がゼロであること**が要件になる。
+
+#### 採用案: `.canvas-toolbar` の「現在ツール名」表示を選択UIに置き換える
+- 着眼: `.canvas-toolbar` は **`body.focus-mode` でも `display:flex` のまま残る**（実測・位置 [54,21]）。しかもそこには元から
+  `<span>ツール: <b id="cur-tool-name">ペン</b></span>` ＝**現在ツール名の表示に場所を取っていた**。
+  **その枠をそのまま選択UIにすれば、方眼を新たに覆う面積はゼロ**になり、全画面/通常で同じ場所・同じ操作になる。
+- 実装: `<label class="tool-pick"><span class="tp-lbl">ツール</span><select id="tool-picker"></select></label>`。
+  option は `buildToolSelect()` が `TOOLS` から生成し、`TOOL_KEYS` を逆引きして**「ペン［P］」の形でショートカットキーを併記**する。
+- 切替は**既存 `setTool` をそのまま呼ぶ**（切替ロジックは新設しない）。逆に `setTool` の側で `$('tool-picker').value` を
+  同期する＝**キーボードで切り替えても select の表示が追従**する（どの経路で切り替えても一致）。
+- 旧 `cur-tool-name` を更新する行は**存在チェック付きで残してある**＝HTMLから消えても壊れない。
+- 載せるツール: **7種すべて**。第1案が「ラン選択・矩形選択はあえて載せない」としていたのに対し、こちらは**載せた上で、
+  全画面中に選ばれたらステータスバーで「Esc で全画面を抜けると左パネルに出ます」と案内する**。
+  無効化はしない＝モードによって見た目を変えない（同じUIが同じように使える方を優先）。
+- キャンバス操作を邪魔しない: select は `#trace-svg` の外＝描画ハンドラ（svg直バインドの `mousedown`/`wheel`）には
+  **元から届かない**。加えて**選択後に `blur()`** ＝ P/E/F/Esc・Space（パン）などのキー操作が従来どおり効く
+  （入力欄フォーカス中は `onKey` が無効化されるため、フォーカスを残すとショートカットが死ぬ）。
+- タップ領域: `#tool-picker` は `min-height:40px` / `min-width:132px`（指で押せる大きさ・最長のツール名が入る幅）。
+  select の共通ルール `width:100%` を `width:auto` で上書きしている。
+- **実装結果（2026-07-31）**: `editor.html` の `.canvas-toolbar` 内 `cur-tool-name` を `label.tool-pick`＋`select#tool-picker` に置換／
+  `css/editor.css` に `.tool-pick`/`.tp-lbl`/`#tool-picker`（幅・タップ領域・アクセント枠・focus outline）／
+  `js/trace-app.js` に `buildToolSelect()` 追加＋`init` で呼び出し＋`setTool` 内での value 同期。
+- 不変: `floatMax=7`・break層・cells/breaksモデル・world単位下絵ジオメトリ・全画面(#17)・保存(#19)・ショートカット全種。
+  **`#focus-tools`/`.ft-btn` は存在しない**（第1案の撤去をテスト `s20_no_floating_palette` で検証している）。
+
+**R6 テスト（2026-07-31）**: `test/gen-editor-smoke.cjs` に **#20 分 16チェック**を追加（全140）。
+`test/trace-focus-css-probe.html` に select の表示・実効スタイル系 **5チェック**を追加（全22）。主な検証内容＝
+select の存在／`.canvas-toolbar` の中にあること／**旧フローティングが撤去されていること（`#focus-tools` なし・`.ft-btn` 0個）**／
+option が全7ツール分あること／選択値＝現在ツール／キーボード切替に select が追従（`key('u')` → `value === 'underlay'`）／
+全画面中も select が生存し、そこからの切替で `TraceApp.getTool()` が変わること／Esc で通常モードに戻ること。
+**⚠ テストは未実行（生成のみ確認・37154 bytes）。** `gen-editor-smoke.cjs` はテストHTMLの生成スクリプトであり
+ランナーではないため、実行はブラウザで開く必要がある。**green の実測は取れていない**。
+**push は伎海の指示（2026-07-31）で実施。**

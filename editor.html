@@ -147,7 +147,11 @@
     <!-- #15 キャンバス直接D&D中のオーバーレイ（画像を板に落として下絵を読み込む） -->
     <div class="canvas-dnd-hint hidden" id="canvas-dnd-hint">ここにドロップで下絵を読み込み</div>
     <div class="canvas-toolbar">
-      <span>ツール: <b id="cur-tool-name">ペン</b></span>
+      <!-- #20 ここは元から「現在のツール名」の表示に場所を取っていた枠。そのまま選択UIにする
+           ＝方眼を新たに覆わない。.canvas-toolbar は body.focus-mode でも残るので全画面でも同じ場所・同じ操作。 -->
+      <label class="tool-pick"><span class="tp-lbl">ツール</span>
+        <select id="tool-picker" title="ツールを選ぶ（キーボードは P/D/E/R/M/U/B）" aria-label="ツールを選ぶ"></select>
+      </label>
       <span class="op-hint">ホイール=ズーム・Space/中ドラッグ=移動・Alt+クリック=スポイト・H=下絵ON/OFF・F=全画面・Esc=戻る</span>
       <span class="spacer"></span>
       <button class="btn-ghost" id="btn-focus-toggle" title="キャンバスだけの全画面表示（F キー・Esc で戻る）">⛶ 全画面</button>

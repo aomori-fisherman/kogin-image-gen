@@ -468,7 +468,9 @@
     tool = t; drag = null; ghostCells = null; hoverCell = null;
     if (t !== 'select') selection = selection; // 選択は保持
     for (var i = 0; i < TOOLS.length; i++) { var b = $('tool-' + TOOLS[i]); if (b) b.classList.toggle('active', TOOLS[i] === t); }
-    if ($('cur-tool-name')) $('cur-tool-name').textContent = TOOL_NAMES[t] || t;
+    // #20 キャンバス上部バーのツール選択（旧 cur-tool-name の表示役を兼ねる＝選択中がそのまま見える）。
+    if ($('tool-picker') && $('tool-picker').value !== t) $('tool-picker').value = t;
+    if ($('cur-tool-name')) $('cur-tool-name').textContent = TOOL_NAMES[t] || t;   // 旧表示が残る構成でも壊れないよう保持
     if ($('tool-tip')) $('tool-tip').textContent = TOOL_TIPS[t] || '';
     setSvgCursor(spaceDown ? 'pan' : (altDown ? 'eyedropper' : (CURSOR_BY_TOOL[t] || 'pen')));
     renderPreview();
@@ -479,6 +481,31 @@
     for (var i = 0; i < sws.length; i++) sws[i].classList.toggle('active', sws[i].getAttribute('data-id') === id);
     var o = colorObj(id);
     if ($('active-color')) $('active-color').innerHTML = o ? ('選択中: <b>' + o.name + '</b> ' + (o.code || '')) : '—';
+  }
+  // #20 キャンバス上部バーのツール選択（元は現在ツール名の表示だけだった枠）。
+  // 全画面（body.focus-mode）でも .canvas-toolbar は残るので、全画面/通常で同じ場所・同じ操作。
+  // 切替は既存 setTool を呼ぶだけ（ツール切替ロジックは新設しない）。選択中は select の値＝現在ツールで見える。
+  function buildToolSelect() {
+    var el = $('tool-picker'); if (!el) return;
+    var keyOf = {};
+    for (var k in TOOL_KEYS) keyOf[TOOL_KEYS[k]] = k.toUpperCase();
+    var html = '';
+    for (var i = 0; i < TOOLS.length; i++) {
+      var t = TOOLS[i];
+      html += '<option value="' + t + '">' + (TOOL_NAMES[t] || t) + '［' + (keyOf[t] || (i + 1)) + '］</option>';
+    }
+    el.innerHTML = html;
+    el.value = tool;
+    el.addEventListener('change', function () {
+      var t = this.value;
+      setTool(t);
+      // フォーカスを残さない＝P/E/F/Esc などのショートカットが従来どおり効く（入力欄フォーカス中は onKey が無効化するため）。
+      if (this.blur) this.blur();
+      // ラン選択/矩形選択は全画面中だと「範囲選択の操作」パネルが隠れて次に進めない。
+      // 無効化はせず（通常モードでは有効・モードで見た目を変えない）、ステータスバーで次の一手を出す。
+      if (focusMode && (t === 'select' || t === 'rect')) setStatus('「' + TOOL_NAMES[t] + '」の範囲操作は Esc で全画面を抜けると左パネルに出ます');
+      else setStatus('ツール: ' + (TOOL_NAMES[t] || t));
+    });
   }
   function buildPalette() {
     var el = $('palette'); if (!el) return; var html = '';
@@ -1042,7 +1069,7 @@
     try { var saved = localStorage.getItem(AUTOSAVE_KEY); if (saved && window.confirm('前回の続きを開きますか？（キャンセルで新規）')) start = S.deserialize(saved); } catch (e) { start = null; }
     if (!start) { var p = CFG.PRESETS.filter(function (x) { return x.id === 'meishiire'; })[0] || CFG.PRESETS[0]; start = S.newDoc(p.w || 80, p.h || 100); }
     store = S.DocStore(start);
-    buildPalette(); buildFabricSelect(); buildPresetSelect(); bindControls(); bindCanvas(); bindKeyboard(); wireCanvasDnd();
+    buildToolSelect(); buildPalette(); buildFabricSelect(); buildPresetSelect(); bindControls(); bindCanvas(); bindKeyboard(); wireCanvasDnd();
     setTool(tool); setActiveColor(activeColor); syncGridControls(); syncUnderlayControls();
     renderLibraryList(); dirty = false;   // #19 保存済み一覧を先に描く（メニューは閉じたまま）／起動直後は未編集扱い
     renderFull(); setStatus('準備完了（すべて仮値・実測後に差し替え）');
