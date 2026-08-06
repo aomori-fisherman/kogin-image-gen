@@ -403,3 +403,55 @@ option が全7ツール分あること／選択値＝現在ツール／キーボ
   「大きめに刷る（複数ページ分割印刷）」は別要望として保留（池田さんに要否確認）。
 
 **push はしない**（伎海の実機目視後に main が判断）。
+
+---
+
+## 12. ラウンド8 — カラー印刷の作り直し（#23・伎海 実機FB 2026-08-06）
+
+> R7を実機で見た伎海のFB：**「糸の色が変わるんじゃなくて、糸の色を図形（記号）を変えて表現していてとても見づらい。
+> ちゃんと糸の色がカラーで印刷できるようにしてくれ」**＝R7 は FAIL 相当。同日中に作り直した。
+
+### #23-a 伎海が見た「記号で色を表現した紙面」の再現原因（切り分け）
+
+- **本番（GitHub Pages）には R7 は入っていた。** `git reflog show origin/master` の最新が
+  `d3ace42 … update by push`（＝R7の docs コミット）＝**main が push 済み**。origin/master と HEAD は同一で、
+  `git show origin/master:js/trace-chart.js | grep -c 'chart-cell\|colorMode'` = 8 ＝**カラー実装は配信されていた**。
+  よって「push漏れで旧版を見た」ではない。
+- 残る候補は2つで、**どちらも同じ対策で潰す**:
+  1. **ブラウザ/Pagesのキャッシュ**（`editor.html` は同名・`js/trace-chart.js` も同名＝更新が反映されず旧JSのままになりうる）。
+     → **キャッシュバスター** `?v=r8` を `editor.html` の css/js 参照に付与（**以後、改修のたびに上げる**）。
+     help.html にも「画面が前のままの時は Ctrl+Shift+R」を追記。
+  2. **R7の紙面そのものが「記号で色を表現している」ように見えた**：R7カラーは色ベタ塗りの**上に記号を重ねていた**ため、
+     赤地に白▲・山吹地に黒■…と**記号が主役に見える**紙面だった（凡例も「記号/色/名称…」のまま）。
+     → **R8でカラー時は記号を全廃**（下記 #23-b）。
+- ※ 実URLの目視での最終確認は main（WebFetch 可能な側）に依頼。dev 側からの外向きHTTPは安全ガードでブロックされるため実施していない。
+
+### #23-b カラー＝ベタ塗りのみ・記号ゼロ／白黒はオプトアウト — T0.5.7（R8で実装）
+
+- **既定＝カラー**（従来どおり `opts.color` 既定 true）だが、UIを**「白黒（記号だけ）で印刷する」チェック（既定OFF・`#tco-mono`）**に反転。
+  バーには常時「**糸の色そのままカラーで印刷します**」を表示＝**チェックを探さないと色が出ない設計を廃止**。
+- **カラー時は `.chart-symbol` を1つも描かない**（`buildChartSVG` の記号ループを `if (!colorMode)` で囲む）。
+  色そのものが糸の識別子で、記号は色を潰すノイズにしかならないため。凡例もカラー時は**記号列を出さず**
+  「色 / 名称 / 糸番号(仮) / 目数」＋スウォッチを大きめ（26×14）に。注記も「マスの色がそのまま糸の色です（記号は使いません）」。
+- **白黒モードだけ記号を出す**（色が出せない機械では記号が唯一の識別手段）。従来どおり `CELL-2` の記号・凡例に記号列。
+- 方眼3階層（R7 #22）はカラー/白黒どちらでも維持。`TraceApp.openChart(opts)` が opts を受け取れるようにした（テスト用）。
+
+**R8 検証記録（2026-08-06・dev）**:
+- 印刷プローブ（**チェックボックスを一切触らない素の `TraceChart.open` 経路**＝実アプリのチャート出力…と同じ）:
+  `RESULT:{"ok":true,...,"defaultIsColor":true,"monoCheckboxUnchecked":true,"colorCellsExist":true,"allSixColorsOnPaper":true,"noSymbolsInColorMode":true,...,"colorCells":854,"symbols":0}`
+  ＝**既定で色ベタ塗り854マス・記号ゼロ**。白黒（`?mono=1`＝実チェック操作）は
+  `{"monoHasNoColorCells":true,"monoShowsSymbols":true,...,"colorCells":0,"symbols":854}`。
+- **実PDFの中身を機械検証**（PyMuPDF `get_drawings`）: `r8-color.pdf` に**糸色6色の塗りパスが860本**
+  （854マス＋凡例6）。`?economy=1` で色最適化(economy)を強制したPDFも**860本・6色で同一**（ファイルサイズも 208518 bytes で一致）
+  ＝**SVGの `fill` は「背景グラフィック」やインク節約の対象外**（CSS背景ではなく前景ベクタとして刷られる）ことを実測で確認。
+  別プローブ（CSS背景 `#FF00FF` / SVG fill `#00AA00` を並べたPDF）でも両者の画素値を確認：ヘッドレスCLIの
+  `--print-to-pdf` は**背景ON側**の条件で刷っている（＝OFF条件はCLIから強制できない）ため、OFF側は上記 economy 実測＋
+  「fillは前景パス」という機構での確認に留める（実プリンタでの最終確認は伎海の実機）。
+- 回帰: 純関数 state 101・validate 27・library 45・algo 12・producible 3320・pipeline 0／
+  headless harness ok:true（チャート検査を**R8仕様に更新**＝既定カラー・記号ゼロ・白黒で記号13）・
+  ui-path-probe ok:true・editor-smoke ok:true（`?v=r8` 付与で再生成 37316 bytes）・focus-css-probe ok:true・library-css-probe ok:true。
+- 画面: 印刷プレビュー（オーバーレイ）＝紙面と同じ色ベタ塗り・記号なし。エディタ本体の画面は無変更
+  （スクリーンショットが R7時点と同一バイト数 110648・`trace-render.js` 無変更）。
+- **未検証**: 実プリンタでの発色・実URL（GitHub Pages）での再確認（main側で WebFetch／伎海の実機）。
+
+**push はしない**（main が実施）。

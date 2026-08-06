@@ -226,6 +226,7 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .tco-bar { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
 .tco-sheet { background: #fff; margin: 0 auto; max-width: 1000px; padding: 12px; border-radius: 6px; }
 .tco-sheet svg { width: 100%; height: auto; display: block; }
+.tco-mode { color: var(--accent); font-size: 12px; font-weight: 700; align-self: center; }
 .tco-check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; padding: 0 6px; }
 .tco-check input { width: 16px; height: 16px; }
 .tco-tip { max-width: 1000px; margin: 8px auto 0; color: var(--text-dim); font-size: 11px; text-align: center; }

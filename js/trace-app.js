@@ -1031,7 +1031,7 @@
       copyRect: function () { if (rectSel) clip = S.copyRect(cur().cells, rectSel.x, rectSel.y, rectSel.w, rectSel.h); return clip; },
       getClip: function () { return clip; },
       repeatPasteAt: function (ax, ay, nx, ny, gx, gy) { var wri = S.repeatPaste(cur().cells, clip, ax, ay, nx, ny, gx, gy); store.commit('repeat'); renderFull(); return wri; },
-      openChart: function () { return C.buildChartSVG(cur(), lastVr, CFG); },
+      openChart: function (opts) { return C.buildChartSVG(cur(), lastVr, CFG, opts); },  // opts省略=既定カラー
       serialize: function () { return S.serialize(cur()); },
       load: function (str) { store.replace(S.deserialize(str)); renderFull(); },
       // break（切れ目）テスト用

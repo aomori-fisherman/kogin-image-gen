@@ -132,32 +132,35 @@
     for (var lx = 0; lx <= w; lx += 5) s.push('<text x="' + (MX + lx * CELL) + '" y="' + (MY - 4) + '" font-size="8" text-anchor="middle" fill="#666">' + lx + '</text>');
     for (var ly = 0; ly <= h; ly += 5) s.push('<text x="' + (MX - 4) + '" y="' + (MY + ly * CELL + 3) + '" font-size="8" text-anchor="end" fill="#666">' + ly + '</text>');
 
-    // 記号セル
-    // カラー時は記号を小さめに置く（記号がマスを覆うと肝心の糸色が見えなくなるため）。
-    var symFS = colorMode ? Math.round(CELL * 0.62 * 10) / 10 : (CELL - 2);
-    var symDY = Math.round(symFS * 0.35 * 10) / 10;
+    // 記号セル（白黒モードのみ）。
+    // ★ カラー時は記号を一切描かない（伎海FB 2026-08-06 R8「糸の色を記号の形で表現していて見づらい」）。
+    //   色そのものが糸の識別子なので、記号は色を邪魔するノイズにしかならない。
+    //   記号が要るのは「色が出せない白黒印刷」だけ＝そこでは唯一の識別手段なので従来どおり出す。
+    var symFS = CELL - 2;
+    var symDY = 4;
     var symbolCellCount = 0;
-    for (var y = 0; y < h; y++) {
-      var row = doc.cells[y];
-      for (var x = 0; x < w; x++) {
-        var c = row[x];
-        if (c == null) continue;
-        var sym = symById[c] || '?';
-        // カラー時は糸色の明るさに応じて記号を黒/白に反転（色の上でも記号が読める＝白黒コピー耐性も残す）
-        var ink = colorMode ? symbolInk(hexById[c]) : '#111';
-        s.push('<text class="chart-symbol" x="' + (MX + x * CELL + CELL / 2) + '" y="' + (MY + y * CELL + CELL / 2 + symDY) + '" font-size="' + symFS + '" text-anchor="middle" fill="' + ink + '">' + esc(sym) + '</text>');
-        symbolCellCount++;
+    if (!colorMode) {
+      for (var y = 0; y < h; y++) {
+        var row = doc.cells[y];
+        for (var x = 0; x < w; x++) {
+          var c = row[x];
+          if (c == null) continue;
+          var sym = symById[c] || '?';
+          s.push('<text class="chart-symbol" x="' + (MX + x * CELL + CELL / 2) + '" y="' + (MY + y * CELL + CELL / 2 + symDY) + '" font-size="' + symFS + '" text-anchor="middle" fill="#111">' + esc(sym) + '</text>');
+          symbolCellCount++;
+        }
       }
     }
 
-    // 凡例
-    s.push('<text x="' + MX + '" y="' + (legendTop) + '" font-size="12" font-weight="bold" fill="#111">凡例（記号 / 色 / 名称 / 糸番号(仮) / 目数）</text>');
+    // 凡例（カラー時は記号列を出さない＝紙面に記号が無いため）
+    s.push('<text x="' + MX + '" y="' + (legendTop) + '" font-size="12" font-weight="bold" fill="#111">' +
+      (colorMode ? '凡例（色 / 名称 / 糸番号(仮) / 目数）' : '凡例（記号 / 色 / 名称 / 糸番号(仮) / 目数）') + '</text>');
     for (var i = 0; i < used.length; i++) {
       var it = used[i];
       var ry = legendTop + 14 + i * legendRowH;
       s.push('<g class="legend-row">');
-      s.push('<text x="' + (MX + 4) + '" y="' + (ry + 12) + '" font-size="13" fill="#111">' + esc(it.symbol) + '</text>');
-      s.push('<rect x="' + (MX + 30) + '" y="' + (ry) + '" width="16" height="14" fill="' + it.hex + '" stroke="#888"/>');
+      if (!colorMode) s.push('<text x="' + (MX + 4) + '" y="' + (ry + 12) + '" font-size="13" fill="#111">' + esc(it.symbol) + '</text>');
+      s.push('<rect class="legend-swatch" x="' + (MX + (colorMode ? 4 : 30)) + '" y="' + (ry) + '" width="' + (colorMode ? 26 : 16) + '" height="14" fill="' + it.hex + '" stroke="#888"/>');
       s.push('<text x="' + (MX + 54) + '" y="' + (ry + 12) + '" font-size="11" fill="#222">' + esc(it.name) + '　' + esc(it.code) + '　' + it.count + '目</text>');
       s.push('</g>');
     }
@@ -168,8 +171,8 @@
     s.push('<text x="' + MX + '" y="' + (notesTop + 30) + '" font-size="10" fill="#777">※ 偶数ラン ' + vr.evenRuns.length + ' 箇所あり・様式判断は作り手（奇数目が伝統則とされる／確認中）。</text>');
     s.push('<text x="' + MX + '" y="' + (notesTop + 46) + '" font-size="10" fill="#777">※ ' +
       (colorMode
-        ? 'カラー印刷用（マスの色＝糸の色）。白黒で印刷しても記号で色が分かります。太い罫線は10目ごと・中太は5目ごと。'
-        : '記号のみ（白黒）。色で刷るときは印刷画面の「カラーで印刷」にチェックを入れてください。') + '</text>');
+        ? 'マスの色がそのまま糸の色です（記号は使いません）。太い罫線は10目ごと・中太は5目ごと。'
+        : '白黒（記号）で印刷。色は記号で表します。カラーで刷るときは印刷画面の「白黒（記号だけ）で印刷する」のチェックを外してください。') + '</text>');
 
     s.push('</svg>');
     return {
@@ -189,25 +192,29 @@
       ov.id = 'trace-chart-overlay';
       document.body.appendChild(ov);
     }
+    // ★ 既定はカラー。白黒は「オプトアウト」側に置く（チェックを探させないと色が出ない設計にしない・R8）。
     ov.innerHTML =
       '<div class="tco-bar">' +
-        '<label class="tco-check" title="作った糸の色のまま印刷します（外すと記号だけの白黒チャート）">' +
-          '<input type="checkbox" id="tco-color"' + (state.color ? ' checked' : '') + '> カラーで印刷（糸の色をそのまま出す）' +
+        '<span class="tco-mode">糸の色そのままカラーで印刷します</span>' +
+        '<label class="tco-check" title="チェックを入れると、色を使わず記号だけの白黒チャートになります（モノクロ機・コピー用）">' +
+          '<input type="checkbox" id="tco-mono"' + (state.color ? '' : ' checked') + '> 白黒（記号だけ）で印刷する' +
         '</label>' +
         '<button id="tco-print" class="btn-primary">印刷</button>' +
         '<button id="tco-png" class="btn-small">PNG保存</button>' +
         '<button id="tco-close" class="btn-small">閉じる</button>' +
       '</div>' +
       '<div class="tco-sheet">' + built.svgString + '</div>' +
-      '<p class="tco-tip">プリンタ側が「白黒／グレースケール」になっていると色は出ません。印刷画面でカラーを選んでください。</p>';
+      '<p class="tco-tip">色が出ない時は、プリンタ側の設定が「白黒／グレースケール」になっていないか確認してください（印刷画面で「カラー」を選ぶ）。</p>';
     ov.style.display = 'block';
     document.getElementById('tco-close').onclick = function () { ov.style.display = 'none'; };
     document.getElementById('tco-print').onclick = function () { window.print(); };
     document.getElementById('tco-png').onclick = function () { exportPNG(doc, vr, cfg, state); };
-    document.getElementById('tco-color').onchange = function () {
-      state.color = !!this.checked;
+    document.getElementById('tco-mono').onchange = function () {
+      state.color = !this.checked;
       var sheet = ov.querySelector('.tco-sheet');
       if (sheet) sheet.innerHTML = buildChartSVG(doc, vr, cfg, state).svgString;
+      var m = ov.querySelector('.tco-mode');
+      if (m) m.textContent = state.color ? '糸の色そのままカラーで印刷します' : '記号だけの白黒で印刷します';
     };
     return built;
   }

@@ -121,7 +121,8 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 - 奇数スナップ（既定OFF）: 偶数長ランを1目伸縮して奇数に寄せる補助。
 - 検証パネル: 総目数/渡り本数/使用色/最長渡り/`float>7`箇所（赤・**チャート不可**）/偶数ラン箇所（黄・警告のみ）。**切れ目で分割したランは分割後の長さで判定**（8目→切れ目→4+4で違反解消）。
 - チャート出力: 記号グリッド＋凡例＋注記を1枚のSVGで生成→印刷（A4縦）/PNG保存。**紙チャートは従来のセル記号のまま**（切れ目は画面表示とfloat検証のみ・要確認事項として保留）。
-  - **カラー印刷（#21・R7）**: 印刷オーバーレイの「カラーで印刷（糸の色をそのまま出す）」（既定ON）でマスを糸色で塗る。記号は輝度で黒/白に自動反転して残す（白黒コピーでも判別可）。OFFで従来の記号のみ白黒。PNG保存も同じ設定で出る。`@media print` に `print-color-adjust: exact` と白背景を明示。
+  - **カラー印刷（#21・R7／#23 R8で仕様確定）**: **既定＝カラー（マスを糸色でベタ塗り・記号は描かない）**。色そのものが糸の識別子＝記号は色を邪魔するノイズなので出さない（R8・伎海FB）。白黒は**オプトアウト**＝オーバーレイの「白黒（記号だけ）で印刷する」にチェックした時だけ従来の記号チャート（色が出せない機械では記号が唯一の識別手段のため残す）。PNG保存も同じ設定。`@media print` に `print-color-adjust: exact` と白背景を明示。
+  - **キャッシュバスター（R8）**: `editor.html` の css/js 参照に `?v=rN`。GitHub Pages がJS/CSSをキャッシュするため、更新したのに古い画面が出る事故（2026-08-06）を防ぐ。**改修のたびに `v` を上げる**。
   - **方眼3階層（#22・R7）**: 毎目＝薄い細線／5目＝中太／**10目・外枠＝太線**（`cg-thin`/`cg-5`/`cg-10`）。属性値＝画面プレビュー・PNG用、`@media print` のCSSで紙用に微調整（CSSはSVGのpresentation attributeを上書きできる）。
 - 全消去: 左パネルの「全消去（クリア）」＝確認ダイアログ後に cells と切れ目を全消去（undoで戻せる）。
 - 下絵フィット: 右パネル下絵の「横N目/縦N目に合わせる」＝下絵を指定マス目幅にスケール（縦横比維持）。
@@ -168,8 +169,9 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 #   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)＋ブラウザ内保存(#19)＋ツール切替select(#20)・140チェック）
 #   trace-focus-css-probe.html 全画面モードのCSS実効を getComputedStyle で検証（本物の editor.css を読込・display:none/1カラム化＋#20 selectの表示/実効スタイル・22チェック）
 #   trace-library-css-probe.html 保存メニュー（モーダル）のCSS実効を検証（display flex/none・チャートより前面・サムネ64px角・16チェック）
-#   trace-print-probe.html    印刷（R7）の実出力プローブ。--dump-dom で自己検証（カラー8/白黒7チェック）、
-#                             --print-to-pdf で実PDFを出して目視。?color=0 で白黒モード・?w=80&h=100 で名刺入れ相当
+#   trace-print-probe.html    印刷（R7/R8）の実出力プローブ。--dump-dom で自己検証（既定カラー9/白黒9チェック）、
+#                             --print-to-pdf で実PDFを出して目視。?mono=1 で白黒（実チェックボックス操作）・
+#                             ?w=80&h=100 で名刺入れ相当・?economy=1 で色最適化(economy)強制時にfillが落ちないか診断
 #   例) chrome --headless=new --no-pdf-header-footer --print-to-pdf=out.pdf ^
 #        --virtual-time-budget=6000 "file:///C:/dev/kogin-image-gen/test/trace-print-probe.html"
 ```

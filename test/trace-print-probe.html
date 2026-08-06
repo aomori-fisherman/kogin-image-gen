@@ -8,6 +8,14 @@
      クエリ ?color=0 で「カラーで印刷」OFF（記号のみ）の紙面を出せる。 -->
 <link rel="stylesheet" href="../css/editor.css">
 <style>@media print { #trace-harness-result { display: none !important; } }</style>
+<script>
+// ?economy=1 … 「インク節約（economy）」相当を強制して、SVGのfillが落ちないかを見る診断用。
+// （ブラウザ印刷設定「背景のグラフィック」OFF は CSS背景の抑止＝SVGのfill属性は対象外、という前提の実測確認）
+if (location.search.indexOf('economy=1') >= 0) {
+  document.write('<style>@media print{ html, body, #trace-chart-overlay, .tco-sheet, .tco-sheet svg, .tco-sheet svg * {' +
+    '-webkit-print-color-adjust: economy !important; color-adjust: economy !important; print-color-adjust: economy !important; } }<\/style>');
+}
+</script>
 <body>
 <div id="trace-harness-result">PENDING</div>
 <script>window.__initErr = null; window.addEventListener('error', function (ev) { if (!window.__initErr) window.__initErr = (ev.message || '') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''); });</script>
@@ -40,11 +48,12 @@
   }
   var vr = V.analyze(doc.cells, { floatMax: CFG.floatMax, breaks: doc.breaks });
 
-  var wantColor = (location.search.indexOf('color=0') < 0);
-  var built = C.open(doc, vr, CFG);
+  // 既定はカラー。?mono=1（旧: ?color=0）で「白黒（記号だけ）で印刷する」チェックを実操作してモノクロ紙面にする。
+  var wantColor = (location.search.indexOf('mono=1') < 0 && location.search.indexOf('color=0') < 0);
+  var built = C.open(doc, vr, CFG);      // ← 素の呼び出し＝実アプリ（チャート出力…）と同じ経路
   if (!wantColor) {
-    var cb = document.getElementById('tco-color');
-    if (cb) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
+    var cb = document.getElementById('tco-mono');
+    if (cb) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
   }
 
   var sheet = document.querySelector('.tco-sheet');
@@ -62,6 +71,9 @@
   detail.g5 = g5.length;
   detail.g10 = g10.length;
   detail.colorMode = wantColor;
+  detail.builtColorMode = built.colorMode;         // C.open が opts 無しで返した既定モード
+  var monoBox = document.getElementById('tco-mono');
+  detail.monoCheckboxChecked = monoBox ? monoBox.checked : null;
   detail.initErr = window.__initErr;
 
   // 使用色hexが実際にセル塗りとして出ているか（凡例だけでなくグリッド内に）
@@ -75,14 +87,18 @@
   checks.noInitErr = !window.__initErr;
   checks.noFloatViolation = vr.floatViolations.length === 0;
   checks.sheetExists = !!sheet;
-  checks.symbolsExist = syms.length === vr.cellCount;
   checks.gridTiers = thin.length > 0 && g5.length > 0 && g10.length > 0;
   checks.tierWidthsAscend = detail.strokeThin < detail.stroke5 && detail.stroke5 < detail.stroke10;
+  // R8: 既定はカラー＝チェックを触らずに開いた紙面が「色ベタ塗り・記号なし」であること
+  checks.defaultIsColor = detail.builtColorMode === true;
+  checks.monoCheckboxUnchecked = !!(monoBox && monoBox.checked === false) === wantColor;
   if (wantColor) {
     checks.colorCellsExist = cellRects.length === vr.cellCount;
     checks.allSixColorsOnPaper = detail.cellFillHexes.length === 6;
+    checks.noSymbolsInColorMode = syms.length === 0;          // ★記号で色を表現しない
   } else {
     checks.monoHasNoColorCells = cellRects.length === 0;
+    checks.monoShowsSymbols = syms.length === vr.cellCount;   // 白黒では記号が唯一の識別手段＝出す
   }
 
   var ok = true; for (var kk in checks) if (!checks[kk]) ok = false;

@@ -75,14 +75,23 @@ function runHarness() {
     checks.noViolation = TraceApp.getVr().floatViolations.length === 0;
     checks.chartEnabled = TraceApp.chartDisabled() === false;
 
-    // 8. チャート open → 凡例・記号セル存在
+    // 8. チャート open → 凡例・紙面のマス表現
+    //    R8仕様: 既定＝カラー（色ベタ塗り・記号なし）／白黒モード＝記号のみ（色塗りなし）。
     var built = TraceApp.openChart();
     var sink = document.getElementById('chart-sink');
     sink.innerHTML = built.svgString;
     var symCells = sink.querySelectorAll('.chart-symbol').length;
+    var colorCells = sink.querySelectorAll('.chart-cell').length;
     var legendRows = sink.querySelectorAll('.legend-row').length;
-    checks.chartSymbolsExist = symCells === 13 && built.symbolCellCount === 13;
+    checks.chartDefaultIsColor = built.colorMode === true;
+    checks.chartColorCellsExist = colorCells === 13 && built.colorCellCount === 13;
+    checks.chartNoSymbolsInColor = symCells === 0 && built.symbolCellCount === 0;
     checks.legendExists = legendRows >= 1 && built.usedColors.length >= 1;
+    // 白黒モード（オプトアウト）では従来どおり記号で表現し、色塗りはしない
+    var builtMono = TraceApp.openChart({ color: false });
+    sink.innerHTML = builtMono.svgString;
+    checks.chartMonoSymbols = sink.querySelectorAll('.chart-symbol').length === 13 && builtMono.symbolCellCount === 13;
+    checks.chartMonoNoColorCells = sink.querySelectorAll('.chart-cell').length === 0;
 
     // 9. serialize roundtrip
     var str = TraceApp.serialize();
