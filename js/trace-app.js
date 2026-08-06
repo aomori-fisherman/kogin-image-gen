@@ -76,7 +76,7 @@
   // ---- 描画 ----
   function view(extra) {
     var cellW = zoom, cellH = zoom * (cur().grid.cellAspect || 1);
-    var v = { cellW: cellW, cellH: cellH, uf: ufactor(), hideUnderlay: !underlayVisible, showGrid: showGrid, show5: show5, showCenter: showCenter, gridOpacity: gridOpacity, palette: CFG.PALETTE, fabrics: CFG.FABRICS };
+    var v = { cellW: cellW, cellH: cellH, uf: ufactor(), hideUnderlay: !underlayVisible, showGrid: showGrid, show5: show5, showCenter: showCenter, gridOpacity: gridOpacity, palette: CFG.PALETTE, fabrics: CFG.FABRICS, fabricHex: S.fabricHexOf(cur(), CFG) };
     if (extra) for (var k in extra) v[k] = extra[k];
     return v;
   }
@@ -517,11 +517,30 @@
       if (tool === 'select' && selection) recolorSel(id); else setActiveColor(id);
     });
   }
+  // 地布（R9）: プリセット＋「自由な色」（カラーピッカー）。選んだ色は画面・チャート（印刷/PNG）・サムネに共通で効く。
+  var FABRIC_CUSTOM = CFG.FABRIC_CUSTOM_ID || 'custom';
   function buildFabricSelect() {
     var el = $('fabric-select'); if (!el) return; var html = '';
     for (var i = 0; i < CFG.FABRICS.length; i++) html += '<option value="' + CFG.FABRICS[i].id + '">' + CFG.FABRICS[i].name + '</option>';
+    html += '<option value="' + FABRIC_CUSTOM + '">自由な色（右のパレットで選ぶ）</option>';
     el.innerHTML = html; el.value = cur().fabricId;
-    el.addEventListener('change', function () { cur().fabricId = el.value; store.commit('fabric'); renderFull(); scheduleAutosave(); });
+    el.addEventListener('change', function () {
+      cur().fabricId = el.value;
+      if (el.value === FABRIC_CUSTOM && !cur().fabricHex) cur().fabricHex = S.fabricHexOf(cur(), CFG);
+      store.commit('fabric'); renderFull(); syncFabricControls(); scheduleAutosave();
+    });
+    var pick = $('fabric-color');
+    if (pick) pick.addEventListener('input', function () {
+      cur().fabricId = FABRIC_CUSTOM; cur().fabricHex = this.value;
+      store.commit('fabric'); renderFull(); syncFabricControls(); scheduleAutosave();
+    });
+    syncFabricControls();
+  }
+  function syncFabricControls() {
+    var hex = S.fabricHexOf(cur(), CFG);
+    if ($('fabric-select')) $('fabric-select').value = cur().fabricId;
+    if ($('fabric-color')) $('fabric-color').value = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#1B2440';
+    if ($('fabric-hex')) $('fabric-hex').textContent = hex;
   }
   function buildPresetSelect() {
     var el = $('preset-select'); if (!el) return; var html = '';
@@ -551,7 +570,7 @@
     if ($('aspect-val')) $('aspect-val').textContent = Number(g.cellAspect).toFixed(2);
     if ($('zoom-val')) $('zoom-val').textContent = zoom;
     if ($('gridop-val')) $('gridop-val').textContent = Math.round(gridOpacity * 100) + '%';
-    if ($('fabric-select')) $('fabric-select').value = cur().fabricId;
+    syncFabricControls();
   }
 
   // ---- 下絵 ----
@@ -733,9 +752,7 @@
       var cw = Math.max(8, Math.round(vw * sc)), ch = Math.max(8, Math.round(vh * sc));
       cvs.width = cw; cvs.height = ch;
       var ctx = cvs.getContext('2d'); if (!ctx) return '';
-      var fab = null;
-      for (var i = 0; i < CFG.FABRICS.length; i++) if (CFG.FABRICS[i].id === doc.fabricId) fab = CFG.FABRICS[i];
-      ctx.fillStyle = fab ? fab.hex : '#1B2440';
+      ctx.fillStyle = S.fabricHexOf(doc, CFG);   // R9: 自由色（custom）も含めて1関数で解決
       ctx.fillRect(0, 0, cw, ch);
       var sx = cw / g.w, sy = ch / g.h, dw = Math.max(1, Math.ceil(sx)), dh = Math.max(1, Math.ceil(sy));
       for (var y = 0; y < g.h; y++) {

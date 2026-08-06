@@ -20,10 +20,19 @@
       { id: 'meishiire', name: '名刺入れ（約・要実測確定）', w: 80, h: 100 },  // 横80×縦100
       { id: 'custom',    name: 'カスタム', w: null, h: null }
     ],
+    // 地布プリセット（仮・G-2実測で hex/名称を差し替え）。先頭が新規ドキュメントの既定。
+    // 「自由な色」は id:'custom' ＋ doc.fabricHex（カラーピッカー）で表す＝ここには列挙しない。
     FABRICS: [
-      { id: 'navy',   name: '紺（仮）',   hex: '#1B2440' },
-      { id: 'kinari', name: '生成（仮）', hex: '#F2EEE3' }
+      { id: 'navy',    name: '紺（仮）',       hex: '#1B2440' },
+      { id: 'indigo',  name: '藍（仮）',       hex: '#2C4A70' },
+      { id: 'black',   name: '黒（仮）',       hex: '#14161A' },
+      { id: 'brown',   name: 'こげ茶（仮）',   hex: '#4A3A2E' },
+      { id: 'gray',    name: '灰（仮）',       hex: '#7C838C' },
+      { id: 'graylt',  name: '薄グレー（仮）', hex: '#C9CCD1' },
+      { id: 'kinari',  name: '生成（仮）',     hex: '#F2EEE3' },
+      { id: 'white',   name: '白（仮）',       hex: '#FFFFFF' }
     ],
+    FABRIC_CUSTOM_ID: 'custom',      // カラーピッカーで選んだ自由な色（hexは doc.fabricHex）
     PALETTE: [   // 仮6色（在庫実測G-2で全hex/名称/糸番号を差し替え）
       { id: 'w01', name: '白（仮）',   code: '仮-01', hex: '#F2EEE3' },
       { id: 'r01', name: '赤（仮）',   code: '仮-02', hex: '#B7282E' },

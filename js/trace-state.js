@@ -52,6 +52,7 @@
       updatedAt: d.updatedAt,
       grid: cloneGrid(d.grid),
       fabricId: d.fabricId,
+      fabricHex: d.fabricHex || null,   // R9: fabricId==='custom' の時の自由な地布色
       cells: cloneCells(d.cells),
       underlay: cloneUnderlay(d.underlay),
       breaks: cloneBreaks(d.breaks)
@@ -75,11 +76,41 @@
       updatedAt: nowIso(),
       grid: { w: w, h: h, cellAspect: cellAspect },
       fabricId: fabricId,
+      fabricHex: null,               // R9: 'custom' 選択時のみ使う自由な地布色
       cells: emptyCells(w, h),
       underlay: null,
       breaks: {}
     };
   }
+
+  // --- 地布の色（R9）---------------------------------------------------------
+  // 画面・チャート（印刷/PNG）・サムネの全経路がこの1関数で同じ hex を得る＝表現の食い違いを作らない。
+  function fabricHexOf(doc, cfg) {
+    cfg = cfg || CFG;
+    var customId = (cfg && cfg.FABRIC_CUSTOM_ID) || 'custom';
+    if (doc && doc.fabricId === customId && doc.fabricHex) return doc.fabricHex;
+    var list = (cfg && cfg.FABRICS) || [];
+    for (var i = 0; i < list.length; i++) if (doc && list[i].id === doc.fabricId) return list[i].hex;
+    return (list[0] && list[0].hex) || '#1B2440';
+  }
+  function fabricNameOf(doc, cfg) {
+    cfg = cfg || CFG;
+    var customId = (cfg && cfg.FABRIC_CUSTOM_ID) || 'custom';
+    if (doc && doc.fabricId === customId) return '自由な色 ' + (doc.fabricHex || '');
+    var list = (cfg && cfg.FABRICS) || [];
+    for (var i = 0; i < list.length; i++) if (doc && list[i].id === doc.fabricId) return list[i].name;
+    return (list[0] && list[0].name) || '';
+  }
+  // hex の明るさ（0〜1）。地布が濃いか薄いかで方眼線・記号の色を反転する判定に使う。
+  function hexLuminance(hex) {
+    if (!hex) return 0;
+    var s = String(hex).replace('#', '');
+    if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+    var r = parseInt(s.substr(0, 2), 16), g = parseInt(s.substr(2, 2), 16), b = parseInt(s.substr(4, 2), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return 0;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+  function isDarkFabric(doc, cfg) { return hexLuminance(fabricHexOf(doc, cfg)) < 0.5; }
 
   // --- break（切れ目）ヘルパ -------------------------------------------------
   // breaksRow を高速判定用の集合（{x:1}）へ。無ければ null。3導出関数が共有。
@@ -319,6 +350,7 @@
     if (!obj.grid || !Array.isArray(obj.cells)) throw new Error('grid/cells がありません');
     if (obj.underlay === undefined) obj.underlay = null;
     if (!obj.fabricId) obj.fabricId = (CFG.FABRICS && CFG.FABRICS[0]) ? CFG.FABRICS[0].id : 'navy';
+    if (obj.fabricHex === undefined) obj.fabricHex = null;   // R9・旧JSONは自由色なし＝後方互換
     if (!obj.breaks || typeof obj.breaks !== 'object') obj.breaks = {};  // 後方互換: 無ければ空
     return obj;
   }
@@ -391,6 +423,11 @@
     breaksRowOf: breaksRowOf,
     cleanBreaksRow: cleanBreaksRow,
     clampBreaks: clampBreaks,
+    // 地布（R9・app/render/chart/サムネが共有する正本）
+    fabricHexOf: fabricHexOf,
+    fabricNameOf: fabricNameOf,
+    hexLuminance: hexLuminance,
+    isDarkFabric: isDarkFabric,
     // 補助（app/render 用）
     cloneDoc: cloneDoc,
     cloneCells: cloneCells,

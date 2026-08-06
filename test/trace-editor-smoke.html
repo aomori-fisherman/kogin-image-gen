@@ -109,6 +109,12 @@
       <div class="active-color" id="active-color">—</div>
       <label class="block lbl">布地（仮）</label>
       <select id="fabric-select"></select>
+      <div class="row fabric-row">
+        <label for="fabric-color">自由な色</label>
+        <input type="color" id="fabric-color" value="#1B2440" title="布の色を自由に選ぶ（選ぶと「自由な色」になります）">
+        <span class="hint" id="fabric-hex">#1B2440</span>
+      </div>
+      <p class="hint">布の色は<b>画面・印刷（チャート）・PNG保存</b>すべてに反映されます。</p>
     </section>
 
     <section class="panel">
@@ -244,15 +250,15 @@
   </div>
 </div>
 
-<script src="../js/image-loader.js?v=r8"></script>
-<script src="../js/sample.js?v=r8"></script>
-<script src="../js/trace-config.js?v=r8"></script>
-<script src="../js/trace-state.js?v=r8"></script>
-<script src="../js/trace-library.js?v=r8"></script>
-<script src="../js/trace-validate.js?v=r8"></script>
-<script src="../js/trace-render.js?v=r8"></script>
-<script src="../js/trace-chart.js?v=r8"></script>
-<script src="../js/trace-app.js?v=r8"></script>
+<script src="../js/image-loader.js?v=r9"></script>
+<script src="../js/sample.js?v=r9"></script>
+<script src="../js/trace-config.js?v=r9"></script>
+<script src="../js/trace-state.js?v=r9"></script>
+<script src="../js/trace-library.js?v=r9"></script>
+<script src="../js/trace-validate.js?v=r9"></script>
+<script src="../js/trace-render.js?v=r9"></script>
+<script src="../js/trace-chart.js?v=r9"></script>
+<script src="../js/trace-app.js?v=r9"></script>
 
 <div id="trace-harness-result">PENDING</div>
 <script>
@@ -651,6 +657,55 @@ function runSmoke() {
     checks.s19_deleted_dom_empty = document.querySelectorAll('#library-list .lib-item').length === 0 && !$('library-empty').classList.contains('hidden');
     checks.s19_deleted_body_gone = TraceApp.openFromLibrary(savedId) === false;
     TraceApp.closeLibrary();
+
+    // ===== R9 #24: チャート出力「画面」も記号ゼロ・色ベタ塗り（画面＝紙面の一致）＋ #25 地布色 =====
+    TraceApp.reset(12, 4);
+    TraceApp.setTool('pen'); TraceApp.setActiveColor('r01');
+    md(0, 0); mm(4, 0); mu(4, 0);                            // 5目（float違反なし）
+    TraceApp.setActiveColor('b01'); md(0, 1); mm(2, 1); mu(2, 1);  // 3目
+    var chartBtn = $('btn-chart');
+    checks.s24_chart_btn_enabled = !!chartBtn && chartBtn.disabled === false;
+    chartBtn.click();                                        // ← 実導線（チャート出力…）
+    var ov = $('trace-chart-overlay');
+    checks.s24_overlay_shown = !!ov && ov.style.display === 'block';
+    checks.s24_screen_no_symbols = ov.querySelectorAll('.chart-symbol').length === 0;   // ★画面に記号ゼロ
+    checks.s24_screen_color_cells = ov.querySelectorAll('.chart-cell').length === 8;    // ★色ベタ塗り8マス
+    var monoBox = $('tco-mono');
+    checks.s24_mono_checkbox_off = !!monoBox && monoBox.checked === false;
+    monoBox.checked = true; monoBox.dispatchEvent(new Event('change'));                 // 白黒へ切替
+    checks.s24_mono_screen_symbols = ov.querySelectorAll('.chart-symbol').length === 8;
+    checks.s24_mono_screen_no_color = ov.querySelectorAll('.chart-cell').length === 0;
+    monoBox.checked = false; monoBox.dispatchEvent(new Event('change'));                // カラーへ戻す
+    checks.s24_back_to_color = ov.querySelectorAll('.chart-symbol').length === 0 && ov.querySelectorAll('.chart-cell').length === 8;
+
+    // #25 地布: プリセット選択・自由色（カラーピッカー）が doc・画面・チャートに反映される
+    var fsel = $('fabric-select'), fpick = $('fabric-color');
+    checks.s25_select_has_presets = !!fsel && fsel.options.length === (window.TRACE_CONFIG.FABRICS.length + 1); // +自由な色
+    checks.s25_has_color_picker = !!fpick && fpick.type === 'color';
+    fsel.value = 'kinari'; fsel.dispatchEvent(new Event('change'));
+    checks.s25_preset_applied = TraceApp.getDoc().fabricId === 'kinari' &&
+      window.TraceState.fabricHexOf(TraceApp.getDoc(), window.TRACE_CONFIG).toUpperCase() === '#F2EEE3';
+    checks.s25_picker_synced = fpick.value.toUpperCase() === '#F2EEE3';
+    var svgBg = document.querySelector('#trace-svg rect');
+    checks.s25_screen_bg_follows = !!svgBg && svgBg.getAttribute('fill').toUpperCase() === '#F2EEE3';
+    fpick.value = '#3A1F5C'; fpick.dispatchEvent(new Event('input'));                   // 自由色（濃い紫）
+    var CUSTOM_HEX = '#3A1F5C';
+    function hexEq(a, b) { return String(a || '').toUpperCase() === String(b || '').toUpperCase(); }  // input[type=color] は小文字を返す
+    checks.s25_custom_applied = TraceApp.getDoc().fabricId === 'custom' && hexEq(TraceApp.getDoc().fabricHex, CUSTOM_HEX);
+    checks.s25_select_shows_custom = fsel.value === 'custom';
+    var svgBg2 = document.querySelector('#trace-svg rect');
+    checks.s25_screen_bg_custom = !!svgBg2 && svgBg2.getAttribute('fill').toUpperCase() === '#3A1F5C';
+    var b25 = TraceApp.openChart();
+    checks.s25_chart_fabric_hex = hexEq(b25.fabricHex, CUSTOM_HEX) && hexEq(b25.gridBg, CUSTOM_HEX) && b25.darkFabric === true;
+    checks.s25_chart_dark_class = /class="chart-dark"/.test(b25.svgString) &&
+      new RegExp('class="chart-fabric"[^>]*fill="' + CUSTOM_HEX + '"', 'i').test(b25.svgString);
+    var b25m = TraceApp.openChart({ color: false });
+    checks.s25_mono_keeps_white = b25m.gridBg === '#ffffff' && b25m.darkFabric === false;
+    // 保存/復元（自由色が JSON を往復する）
+    var r9str = TraceApp.serialize();
+    TraceApp.load(r9str);
+    checks.s25_roundtrip_custom = TraceApp.getDoc().fabricId === 'custom' && hexEq(TraceApp.getDoc().fabricHex, CUSTOM_HEX);
+    $('tco-close').click();
 
     var ok = Object.keys(checks).every(function (k) { return checks[k]; });
     done({ ok: ok, checks: checks, alerts: window.__alerts, initErr: window.__initErr });

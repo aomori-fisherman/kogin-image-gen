@@ -226,6 +226,11 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .tco-bar { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
 .tco-sheet { background: #fff; margin: 0 auto; max-width: 1000px; padding: 12px; border-radius: 6px; }
 .tco-sheet svg { width: 100%; height: auto; display: block; }
+/* 地布の自由色ピッカー（R9） */
+.fabric-row { align-items: center; gap: 8px; }
+.fabric-row input[type="color"] { width: 46px; height: 28px; padding: 0; border: 1px solid var(--line); background: var(--panel-2); border-radius: 4px; cursor: pointer; }
+#fabric-hex { font-family: ui-monospace, Consolas, monospace; }
+
 .tco-mode { color: var(--accent); font-size: 12px; font-weight: 700; align-self: center; }
 .tco-check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; padding: 0 6px; }
 .tco-check input { width: 16px; height: 16px; }
@@ -250,10 +255,14 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
   }
 
   /* 方眼の階層を紙向けに微調整（毎目はより薄く・5目/10目はより効かせる）。
-     CSSルールは SVG の presentation attribute を上書きできる（attr＝画面/PNGの既定値）。 */
-  .tco-sheet svg line.cg-thin { stroke: #cfcfcf; stroke-width: 0.35; }
-  .tco-sheet svg line.cg-5    { stroke: #6f6f6f; stroke-width: 1; }
-  .tco-sheet svg line.cg-10   { stroke: #141414; stroke-width: 1.8; }
+     CSSルールは SVG の presentation attribute を上書きできる（attr＝画面/PNGの既定値）。
+     ★ 地布が濃い時（svg.chart-dark）は明るい線側を強める＝薄グレーが沈むのを防ぐ（R9）。 */
+  .tco-sheet svg.chart-light line.cg-thin { stroke: #cfcfcf; stroke-width: 0.35; }
+  .tco-sheet svg.chart-light line.cg-5    { stroke: #6f6f6f; stroke-width: 1; }
+  .tco-sheet svg.chart-light line.cg-10   { stroke: #141414; stroke-width: 1.8; }
+  .tco-sheet svg.chart-dark  line.cg-thin { stroke: rgba(255,255,255,0.34); stroke-width: 0.4; }
+  .tco-sheet svg.chart-dark  line.cg-5    { stroke: rgba(255,255,255,0.70); stroke-width: 1.1; }
+  .tco-sheet svg.chart-dark  line.cg-10   { stroke: #ffffff; stroke-width: 1.9; }
 
   @page { size: A4 portrait; margin: 10mm; }
 }

@@ -122,7 +122,8 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 - 検証パネル: 総目数/渡り本数/使用色/最長渡り/`float>7`箇所（赤・**チャート不可**）/偶数ラン箇所（黄・警告のみ）。**切れ目で分割したランは分割後の長さで判定**（8目→切れ目→4+4で違反解消）。
 - チャート出力: 記号グリッド＋凡例＋注記を1枚のSVGで生成→印刷（A4縦）/PNG保存。**紙チャートは従来のセル記号のまま**（切れ目は画面表示とfloat検証のみ・要確認事項として保留）。
   - **カラー印刷（#21・R7／#23 R8で仕様確定）**: **既定＝カラー（マスを糸色でベタ塗り・記号は描かない）**。色そのものが糸の識別子＝記号は色を邪魔するノイズなので出さない（R8・伎海FB）。白黒は**オプトアウト**＝オーバーレイの「白黒（記号だけ）で印刷する」にチェックした時だけ従来の記号チャート（色が出せない機械では記号が唯一の識別手段のため残す）。PNG保存も同じ設定。`@media print` に `print-color-adjust: exact` と白背景を明示。
-  - **キャッシュバスター（R8）**: `editor.html` の css/js 参照に `?v=rN`。GitHub Pages がJS/CSSをキャッシュするため、更新したのに古い画面が出る事故（2026-08-06）を防ぐ。**改修のたびに `v` を上げる**。
+  - **キャッシュバスター（R8）**: `editor.html` の css/js 参照に `?v=rN`（現在 `r9`）。GitHub Pages がJS/CSSをキャッシュするため、更新したのに古い画面が出る事故（2026-08-06）を防ぐ。**改修のたびに `v` を上げる**。
+  - **地布の色（#25・R9）**: プリセット8色（紺/藍/黒/こげ茶/灰/薄グレー/生成/白・仮）＋**自由な色**（`input type=color` → `fabricId='custom'` ＋ `doc.fabricHex`）。解決は `TraceState.fabricHexOf(doc,cfg)` の**1関数に集約**し、画面・チャート（印刷/PNG）・保存サムネが同じ値を使う。チャートは**方眼の地を地布色で塗る**（余白・凡例は白）。地布の輝度で**方眼線を自動反転**（`svg.chart-dark`/`chart-light`＝`@media print` も分岐）。白黒モードは白地固定＋凡例に地布を申し送り。
   - **方眼3階層（#22・R7）**: 毎目＝薄い細線／5目＝中太／**10目・外枠＝太線**（`cg-thin`/`cg-5`/`cg-10`）。属性値＝画面プレビュー・PNG用、`@media print` のCSSで紙用に微調整（CSSはSVGのpresentation attributeを上書きできる）。
 - 全消去: 左パネルの「全消去（クリア）」＝確認ダイアログ後に cells と切れ目を全消去（undoで戻せる）。
 - 下絵フィット: 右パネル下絵の「横N目/縦N目に合わせる」＝下絵を指定マス目幅にスケール（縦横比維持）。
@@ -172,6 +173,7 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 #   trace-print-probe.html    印刷（R7/R8）の実出力プローブ。--dump-dom で自己検証（既定カラー9/白黒9チェック）、
 #                             --print-to-pdf で実PDFを出して目視。?mono=1 で白黒（実チェックボックス操作）・
 #                             ?w=80&h=100 で名刺入れ相当・?economy=1 で色最適化(economy)強制時にfillが落ちないか診断
+#                             ?fabric=kinari / ?fabric=%23RRGGBB で地布色を切替（R9）
 #   例) chrome --headless=new --no-pdf-header-footer --print-to-pdf=out.pdf ^
 #        --virtual-time-budget=6000 "file:///C:/dev/kogin-image-gen/test/trace-print-probe.html"
 ```

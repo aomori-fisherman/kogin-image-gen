@@ -37,6 +37,13 @@ if (location.search.indexOf('economy=1') >= 0) {
   }
   var GW = q('w', 41), GH = q('h', 41);
   var doc = S.newDoc(GW, GH, 1.0);
+  // ?fabric=kinari / ?fabric=%233A1F5C（自由色） で地布を切替（R9）
+  var fm = /[?&]fabric=([^&]+)/.exec(location.search);
+  if (fm) {
+    var fv = decodeURIComponent(fm[1]);
+    if (fv.charAt(0) === '#') { doc.fabricId = 'custom'; doc.fabricHex = fv; }
+    else { doc.fabricId = fv; }
+  }
   var ids = ['w01', 'r01', 'y01', 'g01', 'b01', 'n01'];
   for (var y = 0; y < GH; y++) {
     for (var k = 0; k < 6; k++) {
@@ -72,6 +79,11 @@ if (location.search.indexOf('economy=1') >= 0) {
   detail.g10 = g10.length;
   detail.colorMode = wantColor;
   detail.builtColorMode = built.colorMode;         // C.open が opts 無しで返した既定モード
+  detail.fabricHex = built.fabricHex;
+  detail.darkFabric = built.darkFabric;
+  var fabRect = sheet ? sheet.querySelector('rect.chart-fabric') : null;
+  detail.fabricRectFill = fabRect ? fabRect.getAttribute('fill') : null;
+  detail.svgClass = sheet && sheet.querySelector('svg') ? sheet.querySelector('svg').getAttribute('class') : null;
   var monoBox = document.getElementById('tco-mono');
   detail.monoCheckboxChecked = monoBox ? monoBox.checked : null;
   detail.initErr = window.__initErr;
@@ -92,6 +104,13 @@ if (location.search.indexOf('economy=1') >= 0) {
   // R8: 既定はカラー＝チェックを触らずに開いた紙面が「色ベタ塗り・記号なし」であること
   checks.defaultIsColor = detail.builtColorMode === true;
   checks.monoCheckboxUnchecked = !!(monoBox && monoBox.checked === false) === wantColor;
+  // R9: 地布が紙面（方眼の地）に出ていること・濃淡でクラスが切り替わること
+  checks.fabricRectMatches = wantColor
+    ? (detail.fabricRectFill || '').toUpperCase() === String(built.fabricHex).toUpperCase()
+    : detail.fabricRectFill === '#ffffff';
+  checks.fabricClass = wantColor
+    ? detail.svgClass === (built.darkFabric ? 'chart-dark' : 'chart-light')
+    : detail.svgClass === 'chart-light';
   if (wantColor) {
     checks.colorCellsExist = cellRects.length === vr.cellCount;
     checks.allSixColorsOnPaper = detail.cellFillHexes.length === 6;

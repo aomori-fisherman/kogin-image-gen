@@ -13,10 +13,16 @@
   // こぎん方眼の通例＝毎目は薄い細線・5目ごとに中太・10目ごと（と外枠）は太線。
   // class は @media print 側で紙用に微調整するためのフック
   // （CSSルールは SVG の presentation attribute を上書きできる＝attr は画面/PNG用の既定値になる）。
-  var GRID_TIERS = {
+  // 薄い地布（白紙に近い）用＝濃い線／濃い地布（紺・黒など）用＝明るい線（R9・地布の輝度で自動反転）
+  var GRID_TIERS_LIGHT = {
     1:  { cls: 'cg-thin', stroke: '#d9d9d9', w: 0.4 },
     5:  { cls: 'cg-5',    stroke: '#8c8c8c', w: 0.9 },
     10: { cls: 'cg-10',   stroke: '#1f1f1f', w: 1.6 }
+  };
+  var GRID_TIERS_DARK = {
+    1:  { cls: 'cg-thin', stroke: 'rgba(255,255,255,0.30)', w: 0.4 },
+    5:  { cls: 'cg-5',    stroke: 'rgba(255,255,255,0.62)', w: 0.9 },
+    10: { cls: 'cg-10',   stroke: '#ffffff',                w: 1.6 }
   };
   var TIER_ORDER = [1, 5, 10];   // 薄→濃の順に描いて太線を上に重ねる
 
@@ -60,11 +66,18 @@
   }
 
   // 1枚のチャートSVG文字列と付随情報を返す
-  // opts.color=true（既定）… 刺し目を糸色で塗る＝カラー印刷用（池田さんFB 2026-08-06）。
-  //   記号は色の上に残す（白黒コピー・モノクロ機でも判別できるように）。
-  //   opts.color=false で従来の記号のみ（白黒）チャート。
+  // opts.color=true（既定）… 刺し目を糸色でベタ塗り＝カラー印刷用。記号は描かない（R8・伎海FB）。
+  //   地布の色も方眼の地として刷る（R9）＝画面・印刷・PNGで同じ見た目になる。
+  //   opts.color=false … 記号のみ（白黒）チャート。地は白のまま（記号は白地でないと読めないため）。
   function buildChartSVG(doc, vr, cfg, opts) {
     var colorMode = !(opts && opts.color === false);
+    // 地布（R9）: TraceState を正本にする（画面・サムネと同じ解決）。無い環境では従来の白/紺にフォールバック。
+    var ST = (typeof window !== 'undefined' && window.TraceState) ? window.TraceState : null;
+    var fabHex = ST ? ST.fabricHexOf(doc, cfg) : '#ffffff';
+    var fabName = ST ? ST.fabricNameOf(doc, cfg) : '';
+    var darkFabric = colorMode && (ST ? ST.hexLuminance(fabHex) < 0.5 : false);
+    var gridBg = colorMode ? fabHex : '#ffffff';        // 白黒モードは記号優先で白地固定
+    var TIERS = darkFabric ? GRID_TIERS_DARK : GRID_TIERS_LIGHT;
     var w = doc.grid.w, h = doc.grid.h;
     var used = assignSymbols(doc, vr, cfg);
     var symById = {}, hexById = {};
@@ -73,23 +86,30 @@
     var gridW = w * CELL, gridH = h * CELL;
     var legendTop = MY + gridH + 28;
     var legendRowH = 22;
-    var legendH = 22 + Math.max(1, used.length) * legendRowH;
+    var legendH = 22 + (Math.max(1, used.length) + 1) * legendRowH;   // +1 = 地布の行（R9）
     var notesTop = legendTop + legendH + 14;
     var W = Math.max(MX + gridW + 20, 460);
     var H = notesTop + 68;   // 注記3行分
 
     var s = [];
-    s.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" font-family="sans-serif">');
-    s.push('<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#ffffff"/>');
+    // svg のクラスで地布の明暗を出す（@media print 側が方眼線を紙用に微調整する時のフック）
+    s.push('<svg xmlns="http://www.w3.org/2000/svg" class="' + (darkFabric ? 'chart-dark' : 'chart-light') +
+      '" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" font-family="sans-serif">');
+    s.push('<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#ffffff"/>');   // 紙面（余白・凡例）は白
 
     // タイトル
     var date = new Date().toLocaleDateString('ja-JP');
     s.push('<text x="' + MX + '" y="26" font-size="16" font-weight="bold" fill="#111">こぎんチャート（記法は仮）</text>');
     s.push('<text x="' + MX + '" y="46" font-size="11" fill="#444">' +
       w + '×' + h + '目 ／ セル縦横比 ' + (doc.grid.cellAspect) + '（仮・要実測） ／ ' +
-      (colorMode ? 'カラー（糸色）' : '記号のみ（白黒）') + ' ／ ' + esc(date) + '</text>');
+      (colorMode ? 'カラー（糸色）' : '記号のみ（白黒）') + ' ／ 地布 ' + esc(fabName) + ' ／ ' + esc(date) + '</text>');
+
+    // 方眼の地＝地布の色（R9・カラー時のみ。刺していないマスは布そのもの）
+    s.push('<rect class="chart-fabric" x="' + MX + '" y="' + MY + '" width="' + gridW + '" height="' + gridH +
+      '" fill="' + gridBg + '"/>');
 
     // 刺し目の色塗り（カラーモード）— 方眼線より先に置いて、罫線が色の上に見えるようにする。
+    var cellEdge = darkFabric ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.18)';
     var colorCellCount = 0;
     if (colorMode) {
       for (var cy = 0; cy < h; cy++) {
@@ -98,10 +118,10 @@
           var cid = crow[cx];
           if (cid == null) continue;
           var chex = hexById[cid] || '#cccccc';
-          // 薄い糸色（白・生成）が白い紙に埋もれないよう、セルに淡い輪郭を付ける
+          // 地布と近い糸色（白地に生成／紺地に紺）が沈まないよう、セルに淡い輪郭を付ける
           s.push('<rect class="chart-cell" x="' + (MX + cx * CELL) + '" y="' + (MY + cy * CELL) +
             '" width="' + CELL + '" height="' + CELL + '" fill="' + chex +
-            '" stroke="rgba(0,0,0,0.18)" stroke-width="0.5"/>');
+            '" stroke="' + cellEdge + '" stroke-width="0.5"/>');
           colorCellCount++;
         }
       }
@@ -110,7 +130,7 @@
     // グリッド線（3階層: 毎目=薄い細線 / 5目=中太 / 10目・外枠=太線）
     var gx, gy, px, py, t, tv;
     for (t = 0; t < TIER_ORDER.length; t++) {
-      tv = GRID_TIERS[TIER_ORDER[t]];
+      tv = TIERS[TIER_ORDER[t]];
       for (gx = 0; gx <= w; gx++) {
         if (lineTier(gx, w) !== TIER_ORDER[t]) continue;
         px = MX + gx * CELL;
@@ -124,10 +144,11 @@
           '" stroke="' + tv.stroke + '" stroke-width="' + tv.w + '"/>');
       }
     }
-    // 中心線
+    // 中心線（濃い地布では明るい水色に寄せる）
     var mx = MX + (w / 2) * CELL, my = MY + (h / 2) * CELL;
-    s.push('<line x1="' + mx + '" y1="' + MY + '" x2="' + mx + '" y2="' + (MY + gridH) + '" stroke="#4FB0C6" stroke-width="0.8" stroke-dasharray="4 3"/>');
-    s.push('<line x1="' + MX + '" y1="' + my + '" x2="' + (MX + gridW) + '" y2="' + my + '" stroke="#4FB0C6" stroke-width="0.8" stroke-dasharray="4 3"/>');
+    var ctrCol = darkFabric ? '#9BE0EE' : '#4FB0C6';
+    s.push('<line x1="' + mx + '" y1="' + MY + '" x2="' + mx + '" y2="' + (MY + gridH) + '" stroke="' + ctrCol + '" stroke-width="0.8" stroke-dasharray="4 3"/>');
+    s.push('<line x1="' + MX + '" y1="' + my + '" x2="' + (MX + gridW) + '" y2="' + my + '" stroke="' + ctrCol + '" stroke-width="0.8" stroke-dasharray="4 3"/>');
     // 座標数字（5目ごと）
     for (var lx = 0; lx <= w; lx += 5) s.push('<text x="' + (MX + lx * CELL) + '" y="' + (MY - 4) + '" font-size="8" text-anchor="middle" fill="#666">' + lx + '</text>');
     for (var ly = 0; ly <= h; ly += 5) s.push('<text x="' + (MX - 4) + '" y="' + (MY + ly * CELL + 3) + '" font-size="8" text-anchor="end" fill="#666">' + ly + '</text>');
@@ -165,19 +186,27 @@
       s.push('</g>');
     }
     if (!used.length) s.push('<text x="' + (MX + 4) + '" y="' + (legendTop + 26) + '" font-size="11" fill="#888">（まだ刺し目がありません）</text>');
+    // 地布の行（R9・どのモードでも出す。白黒モードは地を白で刷るので「実物の布はこの色」の申し送りになる）
+    var fy = legendTop + 14 + Math.max(1, used.length) * legendRowH;
+    s.push('<g class="legend-row legend-fabric">');
+    s.push('<rect class="legend-swatch" x="' + (MX + (colorMode ? 4 : 30)) + '" y="' + fy + '" width="' + (colorMode ? 26 : 16) + '" height="14" fill="' + fabHex + '" stroke="#888"/>');
+    s.push('<text x="' + (MX + 54) + '" y="' + (fy + 12) + '" font-size="11" fill="#222">地布：' + esc(fabName) + '　' + esc(fabHex) +
+      (colorMode ? '' : '（白黒印刷のため紙面は白地）') + '</text>');
+    s.push('</g>');
 
     // 注記3行
     s.push('<text x="' + MX + '" y="' + (notesTop + 14) + '" font-size="10" fill="#777">※ 記法は仮＝ハート現行記法の確認後に差し替え。</text>');
     s.push('<text x="' + MX + '" y="' + (notesTop + 30) + '" font-size="10" fill="#777">※ 偶数ラン ' + vr.evenRuns.length + ' 箇所あり・様式判断は作り手（奇数目が伝統則とされる／確認中）。</text>');
     s.push('<text x="' + MX + '" y="' + (notesTop + 46) + '" font-size="10" fill="#777">※ ' +
       (colorMode
-        ? 'マスの色がそのまま糸の色です（記号は使いません）。太い罫線は10目ごと・中太は5目ごと。'
+        ? 'マスの色がそのまま糸の色・地の色がそのまま布の色です（記号は使いません）。太い罫線は10目ごと・中太は5目ごと。'
         : '白黒（記号）で印刷。色は記号で表します。カラーで刷るときは印刷画面の「白黒（記号だけ）で印刷する」のチェックを外してください。') + '</text>');
 
     s.push('</svg>');
     return {
       svgString: s.join(''), width: W, height: H, usedColors: used,
-      symbolCellCount: symbolCellCount, colorCellCount: colorCellCount, colorMode: colorMode
+      symbolCellCount: symbolCellCount, colorCellCount: colorCellCount, colorMode: colorMode,
+      fabricHex: fabHex, fabricName: fabName, darkFabric: darkFabric, gridBg: gridBg
     };
   }
 
@@ -204,7 +233,8 @@
         '<button id="tco-close" class="btn-small">閉じる</button>' +
       '</div>' +
       '<div class="tco-sheet">' + built.svgString + '</div>' +
-      '<p class="tco-tip">色が出ない時は、プリンタ側の設定が「白黒／グレースケール」になっていないか確認してください（印刷画面で「カラー」を選ぶ）。</p>';
+      '<p class="tco-tip">色が出ない時は、プリンタ側の設定が「白黒／グレースケール」になっていないか確認してください（印刷画面で「カラー」を選ぶ）。<br>' +
+      '布の色（方眼の地）もそのまま刷ります。濃い布はインクを多く使うので、節約したい時は「白黒（記号だけ）で印刷する」を使ってください。</p>';
     ov.style.display = 'block';
     document.getElementById('tco-close').onclick = function () { ov.style.display = 'none'; };
     document.getElementById('tco-print').onclick = function () { window.print(); };

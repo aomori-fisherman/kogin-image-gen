@@ -55,7 +55,9 @@
     var W = PAD * 2 + w * cw, H = PAD * 2 + h * ch;
     var palette = view.palette || [];
     var fabrics = view.fabrics || [];
-    var fab = lookup(fabrics, doc.fabricId) || { hex: '#1B2440' };
+    // R9: 地布は view.fabricHex（app が TraceState.fabricHexOf で解決＝自由色対応）を優先。
+    //     未指定なら従来どおり FABRICS からプリセットを引く（後方互換）。
+    var fab = { hex: view.fabricHex || (lookup(fabrics, doc.fabricId) || {}).hex || '#1B2440' };
     var dark = hexLum(fab.hex) < 0.5;
     var baseLine = dark ? '255,255,255' : '30,40,60';
     var gOp = (view.gridOpacity != null) ? view.gridOpacity : 0.18;

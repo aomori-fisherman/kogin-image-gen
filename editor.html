@@ -6,7 +6,7 @@
 <title>こぎんトレース台エディタ（T0.5・仮）</title>
 <!-- ?v= はキャッシュバスター。GitHub Pages はJS/CSSをブラウザにキャッシュさせるため、
      更新を出したのに古いままの画面が出る事故（2026-08-06 R7）を防ぐ。改修のたびに上げる。 -->
-<link rel="stylesheet" href="css/editor.css?v=r8">
+<link rel="stylesheet" href="css/editor.css?v=r9">
 </head>
 <body>
 
@@ -110,6 +110,12 @@
       <div class="active-color" id="active-color">—</div>
       <label class="block lbl">布地（仮）</label>
       <select id="fabric-select"></select>
+      <div class="row fabric-row">
+        <label for="fabric-color">自由な色</label>
+        <input type="color" id="fabric-color" value="#1B2440" title="布の色を自由に選ぶ（選ぶと「自由な色」になります）">
+        <span class="hint" id="fabric-hex">#1B2440</span>
+      </div>
+      <p class="hint">布の色は<b>画面・印刷（チャート）・PNG保存</b>すべてに反映されます。</p>
     </section>
 
     <section class="panel">
@@ -245,14 +251,14 @@
   </div>
 </div>
 
-<script src="js/image-loader.js?v=r8"></script>
-<script src="js/sample.js?v=r8"></script>
-<script src="js/trace-config.js?v=r8"></script>
-<script src="js/trace-state.js?v=r8"></script>
-<script src="js/trace-library.js?v=r8"></script>
-<script src="js/trace-validate.js?v=r8"></script>
-<script src="js/trace-render.js?v=r8"></script>
-<script src="js/trace-chart.js?v=r8"></script>
-<script src="js/trace-app.js?v=r8"></script>
+<script src="js/image-loader.js?v=r9"></script>
+<script src="js/sample.js?v=r9"></script>
+<script src="js/trace-config.js?v=r9"></script>
+<script src="js/trace-state.js?v=r9"></script>
+<script src="js/trace-library.js?v=r9"></script>
+<script src="js/trace-validate.js?v=r9"></script>
+<script src="js/trace-render.js?v=r9"></script>
+<script src="js/trace-chart.js?v=r9"></script>
+<script src="js/trace-app.js?v=r9"></script>
 </body>
 </html>
