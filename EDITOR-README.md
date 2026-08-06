@@ -121,6 +121,8 @@ C:\dev\kogin-image-gen\editor.html をブラウザでダブルクリック。
 - 奇数スナップ（既定OFF）: 偶数長ランを1目伸縮して奇数に寄せる補助。
 - 検証パネル: 総目数/渡り本数/使用色/最長渡り/`float>7`箇所（赤・**チャート不可**）/偶数ラン箇所（黄・警告のみ）。**切れ目で分割したランは分割後の長さで判定**（8目→切れ目→4+4で違反解消）。
 - チャート出力: 記号グリッド＋凡例＋注記を1枚のSVGで生成→印刷（A4縦）/PNG保存。**紙チャートは従来のセル記号のまま**（切れ目は画面表示とfloat検証のみ・要確認事項として保留）。
+  - **カラー印刷（#21・R7）**: 印刷オーバーレイの「カラーで印刷（糸の色をそのまま出す）」（既定ON）でマスを糸色で塗る。記号は輝度で黒/白に自動反転して残す（白黒コピーでも判別可）。OFFで従来の記号のみ白黒。PNG保存も同じ設定で出る。`@media print` に `print-color-adjust: exact` と白背景を明示。
+  - **方眼3階層（#22・R7）**: 毎目＝薄い細線／5目＝中太／**10目・外枠＝太線**（`cg-thin`/`cg-5`/`cg-10`）。属性値＝画面プレビュー・PNG用、`@media print` のCSSで紙用に微調整（CSSはSVGのpresentation attributeを上書きできる）。
 - 全消去: 左パネルの「全消去（クリア）」＝確認ダイアログ後に cells と切れ目を全消去（undoで戻せる）。
 - 下絵フィット: 右パネル下絵の「横N目/縦N目に合わせる」＝下絵を指定マス目幅にスケール（縦横比維持）。
 - 保存: **①JSONファイル**（手動ダウンロード＝バックアップ・端末間の持ち出し）／**②ブラウザ内保存**（#19・「名前を付けて保存」→「保存済みを開く…」の一覧から開く／上書き／削除。この端末のこのブラウザのみ）／**③自動保存**（localStorage・各操作後800msデバウンス＝起動時に「続きを開きますか？」）。`doc.breaks` も保存/復元（旧JSONは切れ目なしとして後方互換）。
@@ -166,6 +168,10 @@ node test/gen-editor-smoke.cjs      # → test/trace-editor-smoke.html を生成
 #   trace-editor-smoke.html   実editor.html DOMを生成して駆動（レイアウト/切れ目/消し/全消し＋操作コア＋下絵ズーム一体化/表示トグル/D&D/マス目UI＋全画面(#17)/下絵スライダー(#18a)/下絵矢印(#18b)＋ブラウザ内保存(#19)＋ツール切替select(#20)・140チェック）
 #   trace-focus-css-probe.html 全画面モードのCSS実効を getComputedStyle で検証（本物の editor.css を読込・display:none/1カラム化＋#20 selectの表示/実効スタイル・22チェック）
 #   trace-library-css-probe.html 保存メニュー（モーダル）のCSS実効を検証（display flex/none・チャートより前面・サムネ64px角・16チェック）
+#   trace-print-probe.html    印刷（R7）の実出力プローブ。--dump-dom で自己検証（カラー8/白黒7チェック）、
+#                             --print-to-pdf で実PDFを出して目視。?color=0 で白黒モード・?w=80&h=100 で名刺入れ相当
+#   例) chrome --headless=new --no-pdf-header-footer --print-to-pdf=out.pdf ^
+#        --virtual-time-budget=6000 "file:///C:/dev/kogin-image-gen/test/trace-print-probe.html"
 ```
 
 > #19 のスモークは **localStorage の実物**を使う（`file://` でも Chrome は使える）。前回実行の残りで結果が変わらないよう、ドライバ冒頭で `kogin-trace-*` キーを全削除してから起動する。容量超過は `Storage.prototype.setItem` を一時パッチして quota を throw させて検証（実行後に復元）。
@@ -189,7 +195,7 @@ js/trace-state.js          ドキュメントモデル・編集純関数・undo/
 js/trace-library.js        #19 ブラウザ内保存の純ロジック（localStorage注入式・索引/本体分離・容量超過検知・巻き戻し／Node両用）
 js/trace-validate.js       多色ラン抽出（breaks分割）・float/偶数ラン検出・集計（Node両用）
 js/trace-render.js         cells → SVGレイヤ文字列（breaks分割描画＋切れ目マーカー＋hoverCell＋下絵 uf一律スケール/表示ゲート）
-js/trace-chart.js          チャートSVG生成・印刷・PNG書き出し（T0.5では不変）
+js/trace-chart.js          チャートSVG生成・印刷・PNG書き出し（R7でカラー印刷 opts.color＋方眼3階層 cg-thin/cg-5/cg-10）
 js/trace-app.js            配線層（ツール7種・連続塗り/消し・ズーム/パン/スポイト/ショートカット・切れ目/フィット/導線ガード・下絵ズーム一体化(uf)/表示トグル(H)/キャンバスD&D/マス目UI・全画面(F)/下絵スライダー/下絵矢印(#17/#18)・保存）
 test/trace-state-test.cjs      純関数テスト（101・lineCells 補間含む）
 test/trace-validate-test.cjs   純関数テスト（27）
