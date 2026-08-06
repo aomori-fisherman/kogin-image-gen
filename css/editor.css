@@ -226,14 +226,33 @@ select { width: 100%; background: var(--panel-2); color: var(--text); border: 1p
 .tco-bar { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; }
 .tco-sheet { background: #fff; margin: 0 auto; max-width: 1000px; padding: 12px; border-radius: 6px; }
 .tco-sheet svg { width: 100%; height: auto; display: block; }
+.tco-check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; padding: 0 6px; }
+.tco-check input { width: 16px; height: 16px; }
+.tco-tip { max-width: 1000px; margin: 8px auto 0; color: var(--text-dim); font-size: 11px; text-align: center; }
 
 .hidden { display: none; }
 
 @media print {
   .ed-header, .ribbon, .ws { display: none !important; }
+  /* 紙は白。画面用のダーク背景を刷らない（背景グラフィックONのプリンタで黒帯になるのを防ぐ） */
+  html, body { background: #fff !important; color: #111 !important; height: auto !important; }
   #trace-chart-overlay { position: static; background: #fff; padding: 0; display: block !important; }
-  .tco-bar { display: none !important; }
+  .tco-bar, .tco-tip { display: none !important; }
   .tco-sheet { box-shadow: none; max-width: 100%; padding: 0; }
   .tco-sheet svg { width: auto; height: auto; max-width: 100%; max-height: 265mm; }
+
+  /* 糸色をそのまま刷る（economy だと色を落とすブラウザ/ドライバがあるため exact を明示） */
+  #trace-chart-overlay, .tco-sheet, .tco-sheet svg, .tco-sheet svg * {
+    -webkit-print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* 方眼の階層を紙向けに微調整（毎目はより薄く・5目/10目はより効かせる）。
+     CSSルールは SVG の presentation attribute を上書きできる（attr＝画面/PNGの既定値）。 */
+  .tco-sheet svg line.cg-thin { stroke: #cfcfcf; stroke-width: 0.35; }
+  .tco-sheet svg line.cg-5    { stroke: #6f6f6f; stroke-width: 1; }
+  .tco-sheet svg line.cg-10   { stroke: #141414; stroke-width: 1.8; }
+
   @page { size: A4 portrait; margin: 10mm; }
 }

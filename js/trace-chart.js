@@ -9,10 +9,38 @@
   var CELL = 14;      // チャート1目のpx（印刷はCSSで用紙に合わせて縮尺）
   var MX = 34, MY = 64; // グリッド左上マージン（座標数字・タイトル分）
 
+  // 方眼の3階層（池田さんFB 2026-08-06「印刷のマス目が細かく出すぎる」）。
+  // こぎん方眼の通例＝毎目は薄い細線・5目ごとに中太・10目ごと（と外枠）は太線。
+  // class は @media print 側で紙用に微調整するためのフック
+  // （CSSルールは SVG の presentation attribute を上書きできる＝attr は画面/PNG用の既定値になる）。
+  var GRID_TIERS = {
+    1:  { cls: 'cg-thin', stroke: '#d9d9d9', w: 0.4 },
+    5:  { cls: 'cg-5',    stroke: '#8c8c8c', w: 0.9 },
+    10: { cls: 'cg-10',   stroke: '#1f1f1f', w: 1.6 }
+  };
+  var TIER_ORDER = [1, 5, 10];   // 薄→濃の順に描いて太線を上に重ねる
+
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function lookup(arr, id) { for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i]; return null; }
+
+  // i 本目の罫線の階層（0本目と最終本＝外枠は太線）
+  function lineTier(i, n) {
+    if (i === 0 || i === n || i % 10 === 0) return 10;
+    return (i % 5 === 0) ? 5 : 1;
+  }
+
+  // 糸色の明るさ（0〜1）。記号の色を白/黒どちらにするかの判定に使う。
+  function lum(hex) {
+    if (!hex) return 0;
+    var s = String(hex).replace('#', '');
+    if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+    var r = parseInt(s.substr(0, 2), 16), g = parseInt(s.substr(2, 2), 16), b = parseInt(s.substr(4, 2), 16);
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return 0;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  }
+  function symbolInk(hex) { return lum(hex) < 0.55 ? '#ffffff' : '#111111'; }
 
   // 使用色に PALETTE 順で記号を割当
   function assignSymbols(doc, vr, cfg) {
@@ -32,11 +60,15 @@
   }
 
   // 1枚のチャートSVG文字列と付随情報を返す
-  function buildChartSVG(doc, vr, cfg) {
+  // opts.color=true（既定）… 刺し目を糸色で塗る＝カラー印刷用（池田さんFB 2026-08-06）。
+  //   記号は色の上に残す（白黒コピー・モノクロ機でも判別できるように）。
+  //   opts.color=false で従来の記号のみ（白黒）チャート。
+  function buildChartSVG(doc, vr, cfg, opts) {
+    var colorMode = !(opts && opts.color === false);
     var w = doc.grid.w, h = doc.grid.h;
     var used = assignSymbols(doc, vr, cfg);
-    var symById = {};
-    for (var u = 0; u < used.length; u++) symById[used[u].colorId] = used[u].symbol;
+    var symById = {}, hexById = {};
+    for (var u = 0; u < used.length; u++) { symById[used[u].colorId] = used[u].symbol; hexById[used[u].colorId] = used[u].hex; }
 
     var gridW = w * CELL, gridH = h * CELL;
     var legendTop = MY + gridH + 28;
@@ -44,7 +76,7 @@
     var legendH = 22 + Math.max(1, used.length) * legendRowH;
     var notesTop = legendTop + legendH + 14;
     var W = Math.max(MX + gridW + 20, 460);
-    var H = notesTop + 52;
+    var H = notesTop + 68;   // 注記3行分
 
     var s = [];
     s.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" font-family="sans-serif">');
@@ -54,19 +86,43 @@
     var date = new Date().toLocaleDateString('ja-JP');
     s.push('<text x="' + MX + '" y="26" font-size="16" font-weight="bold" fill="#111">こぎんチャート（記法は仮）</text>');
     s.push('<text x="' + MX + '" y="46" font-size="11" fill="#444">' +
-      w + '×' + h + '目 ／ セル縦横比 ' + (doc.grid.cellAspect) + '（仮・要実測） ／ ' + esc(date) + '</text>');
+      w + '×' + h + '目 ／ セル縦横比 ' + (doc.grid.cellAspect) + '（仮・要実測） ／ ' +
+      (colorMode ? 'カラー（糸色）' : '記号のみ（白黒）') + ' ／ ' + esc(date) + '</text>');
 
-    // グリッド線・5目太罫
-    var gx, gy, px, py;
-    for (gx = 0; gx <= w; gx++) {
-      px = MX + gx * CELL;
-      var st = (gx % 5 === 0);
-      s.push('<line x1="' + px + '" y1="' + MY + '" x2="' + px + '" y2="' + (MY + gridH) + '" stroke="' + (st ? '#333' : '#c8c8c8') + '" stroke-width="' + (st ? 1.2 : 0.6) + '"/>');
+    // 刺し目の色塗り（カラーモード）— 方眼線より先に置いて、罫線が色の上に見えるようにする。
+    var colorCellCount = 0;
+    if (colorMode) {
+      for (var cy = 0; cy < h; cy++) {
+        var crow = doc.cells[cy];
+        for (var cx = 0; cx < w; cx++) {
+          var cid = crow[cx];
+          if (cid == null) continue;
+          var chex = hexById[cid] || '#cccccc';
+          // 薄い糸色（白・生成）が白い紙に埋もれないよう、セルに淡い輪郭を付ける
+          s.push('<rect class="chart-cell" x="' + (MX + cx * CELL) + '" y="' + (MY + cy * CELL) +
+            '" width="' + CELL + '" height="' + CELL + '" fill="' + chex +
+            '" stroke="rgba(0,0,0,0.18)" stroke-width="0.5"/>');
+          colorCellCount++;
+        }
+      }
     }
-    for (gy = 0; gy <= h; gy++) {
-      py = MY + gy * CELL;
-      var sth = (gy % 5 === 0);
-      s.push('<line x1="' + MX + '" y1="' + py + '" x2="' + (MX + gridW) + '" y2="' + py + '" stroke="' + (sth ? '#333' : '#c8c8c8') + '" stroke-width="' + (sth ? 1.2 : 0.6) + '"/>');
+
+    // グリッド線（3階層: 毎目=薄い細線 / 5目=中太 / 10目・外枠=太線）
+    var gx, gy, px, py, t, tv;
+    for (t = 0; t < TIER_ORDER.length; t++) {
+      tv = GRID_TIERS[TIER_ORDER[t]];
+      for (gx = 0; gx <= w; gx++) {
+        if (lineTier(gx, w) !== TIER_ORDER[t]) continue;
+        px = MX + gx * CELL;
+        s.push('<line class="' + tv.cls + '" x1="' + px + '" y1="' + MY + '" x2="' + px + '" y2="' + (MY + gridH) +
+          '" stroke="' + tv.stroke + '" stroke-width="' + tv.w + '"/>');
+      }
+      for (gy = 0; gy <= h; gy++) {
+        if (lineTier(gy, h) !== TIER_ORDER[t]) continue;
+        py = MY + gy * CELL;
+        s.push('<line class="' + tv.cls + '" x1="' + MX + '" y1="' + py + '" x2="' + (MX + gridW) + '" y2="' + py +
+          '" stroke="' + tv.stroke + '" stroke-width="' + tv.w + '"/>');
+      }
     }
     // 中心線
     var mx = MX + (w / 2) * CELL, my = MY + (h / 2) * CELL;
@@ -77,6 +133,9 @@
     for (var ly = 0; ly <= h; ly += 5) s.push('<text x="' + (MX - 4) + '" y="' + (MY + ly * CELL + 3) + '" font-size="8" text-anchor="end" fill="#666">' + ly + '</text>');
 
     // 記号セル
+    // カラー時は記号を小さめに置く（記号がマスを覆うと肝心の糸色が見えなくなるため）。
+    var symFS = colorMode ? Math.round(CELL * 0.62 * 10) / 10 : (CELL - 2);
+    var symDY = Math.round(symFS * 0.35 * 10) / 10;
     var symbolCellCount = 0;
     for (var y = 0; y < h; y++) {
       var row = doc.cells[y];
@@ -84,7 +143,9 @@
         var c = row[x];
         if (c == null) continue;
         var sym = symById[c] || '?';
-        s.push('<text class="chart-symbol" x="' + (MX + x * CELL + CELL / 2) + '" y="' + (MY + y * CELL + CELL / 2 + 4) + '" font-size="' + (CELL - 2) + '" text-anchor="middle" fill="#111">' + esc(sym) + '</text>');
+        // カラー時は糸色の明るさに応じて記号を黒/白に反転（色の上でも記号が読める＝白黒コピー耐性も残す）
+        var ink = colorMode ? symbolInk(hexById[c]) : '#111';
+        s.push('<text class="chart-symbol" x="' + (MX + x * CELL + CELL / 2) + '" y="' + (MY + y * CELL + CELL / 2 + symDY) + '" font-size="' + symFS + '" text-anchor="middle" fill="' + ink + '">' + esc(sym) + '</text>');
         symbolCellCount++;
       }
     }
@@ -102,17 +163,26 @@
     }
     if (!used.length) s.push('<text x="' + (MX + 4) + '" y="' + (legendTop + 26) + '" font-size="11" fill="#888">（まだ刺し目がありません）</text>');
 
-    // 注記2行
+    // 注記3行
     s.push('<text x="' + MX + '" y="' + (notesTop + 14) + '" font-size="10" fill="#777">※ 記法は仮＝ハート現行記法の確認後に差し替え。</text>');
     s.push('<text x="' + MX + '" y="' + (notesTop + 30) + '" font-size="10" fill="#777">※ 偶数ラン ' + vr.evenRuns.length + ' 箇所あり・様式判断は作り手（奇数目が伝統則とされる／確認中）。</text>');
+    s.push('<text x="' + MX + '" y="' + (notesTop + 46) + '" font-size="10" fill="#777">※ ' +
+      (colorMode
+        ? 'カラー印刷用（マスの色＝糸の色）。白黒で印刷しても記号で色が分かります。太い罫線は10目ごと・中太は5目ごと。'
+        : '記号のみ（白黒）。色で刷るときは印刷画面の「カラーで印刷」にチェックを入れてください。') + '</text>');
 
     s.push('</svg>');
-    return { svgString: s.join(''), width: W, height: H, usedColors: used, symbolCellCount: symbolCellCount };
+    return {
+      svgString: s.join(''), width: W, height: H, usedColors: used,
+      symbolCellCount: symbolCellCount, colorCellCount: colorCellCount, colorMode: colorMode
+    };
   }
 
   // 画面にオーバーレイして印刷
-  function open(doc, vr, cfg) {
-    var built = buildChartSVG(doc, vr, cfg);
+  // 印刷用の紙面はこのオーバーレイをそのまま刷る（@media print で他を隠す）＝画面プレビュー＝紙面。
+  function open(doc, vr, cfg, opts) {
+    var state = { color: !(opts && opts.color === false) };
+    var built = buildChartSVG(doc, vr, cfg, state);
     var ov = document.getElementById('trace-chart-overlay');
     if (!ov) {
       ov = document.createElement('div');
@@ -121,21 +191,30 @@
     }
     ov.innerHTML =
       '<div class="tco-bar">' +
+        '<label class="tco-check" title="作った糸の色のまま印刷します（外すと記号だけの白黒チャート）">' +
+          '<input type="checkbox" id="tco-color"' + (state.color ? ' checked' : '') + '> カラーで印刷（糸の色をそのまま出す）' +
+        '</label>' +
         '<button id="tco-print" class="btn-primary">印刷</button>' +
         '<button id="tco-png" class="btn-small">PNG保存</button>' +
         '<button id="tco-close" class="btn-small">閉じる</button>' +
       '</div>' +
-      '<div class="tco-sheet">' + built.svgString + '</div>';
+      '<div class="tco-sheet">' + built.svgString + '</div>' +
+      '<p class="tco-tip">プリンタ側が「白黒／グレースケール」になっていると色は出ません。印刷画面でカラーを選んでください。</p>';
     ov.style.display = 'block';
     document.getElementById('tco-close').onclick = function () { ov.style.display = 'none'; };
     document.getElementById('tco-print').onclick = function () { window.print(); };
-    document.getElementById('tco-png').onclick = function () { exportPNG(doc, vr, cfg); };
+    document.getElementById('tco-png').onclick = function () { exportPNG(doc, vr, cfg, state); };
+    document.getElementById('tco-color').onchange = function () {
+      state.color = !!this.checked;
+      var sheet = ov.querySelector('.tco-sheet');
+      if (sheet) sheet.innerHTML = buildChartSVG(doc, vr, cfg, state).svgString;
+    };
     return built;
   }
 
-  // チャートSVG → PNG ダウンロード
-  function exportPNG(doc, vr, cfg) {
-    var built = buildChartSVG(doc, vr, cfg);
+  // チャートSVG → PNG ダウンロード（画面のカラー切替と同じ opts で出す）
+  function exportPNG(doc, vr, cfg, opts) {
+    var built = buildChartSVG(doc, vr, cfg, opts);
     var svg = built.svgString;
     var blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
     var url = URL.createObjectURL(blob);

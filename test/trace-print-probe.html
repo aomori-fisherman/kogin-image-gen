@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<title>trace print probe</title>
+<!-- 印刷（カラー＋方眼階層）の実出力を確認するためのプローブ。
+     使い方:
+       chrome --headless=new --print-to-pdf=out.pdf --no-pdf-header-footer file:///.../test/trace-print-probe.html
+       chrome --headless=new --dump-dom  ... で <div id="trace-harness-result"> の RESULT:{...} を確認
+     クエリ ?color=0 で「カラーで印刷」OFF（記号のみ）の紙面を出せる。 -->
+<link rel="stylesheet" href="../css/editor.css">
+<style>@media print { #trace-harness-result { display: none !important; } }</style>
+<body>
+<div id="trace-harness-result">PENDING</div>
+<script>window.__initErr = null; window.addEventListener('error', function (ev) { if (!window.__initErr) window.__initErr = (ev.message || '') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''); });</script>
+<script src="../js/trace-config.js"></script>
+<script src="../js/trace-state.js"></script>
+<script src="../js/trace-validate.js"></script>
+<script src="../js/trace-render.js"></script>
+<script src="../js/trace-chart.js"></script>
+<script>
+(function () {
+  var CFG = window.TRACE_CONFIG, S = window.TraceState, V = window.TraceValidate, C = window.TraceChart;
+  var checks = {}, detail = {};
+
+  // 既定は 41×41（コースター）。?w=80&h=100 で名刺入れプリセット相当も出せる。
+  // 多色の柄を置く。全ラン ≤7目（float違反なし＝チャート出力可の状態）。
+  function q(name, dflt) {
+    var m = new RegExp('[?&]' + name + '=(\\d+)').exec(location.search);
+    return m ? parseInt(m[1], 10) : dflt;
+  }
+  var GW = q('w', 41), GH = q('h', 41);
+  var doc = S.newDoc(GW, GH, 1.0);
+  var ids = ['w01', 'r01', 'y01', 'g01', 'b01', 'n01'];
+  for (var y = 0; y < GH; y++) {
+    for (var k = 0; k < 6; k++) {
+      var len = 1 + ((y + k) % 4) * 2;              // 1,3,5,7 目
+      var x1 = 1 + k * 7 + ((y % 3));
+      var x2 = Math.min(GW - 2, x1 + len - 1);
+      if (x2 > x1) S.paintRun(doc.cells, y, x1, x2, ids[k]);
+    }
+  }
+  var vr = V.analyze(doc.cells, { floatMax: CFG.floatMax, breaks: doc.breaks });
+
+  var wantColor = (location.search.indexOf('color=0') < 0);
+  var built = C.open(doc, vr, CFG);
+  if (!wantColor) {
+    var cb = document.getElementById('tco-color');
+    if (cb) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
+  }
+
+  var sheet = document.querySelector('.tco-sheet');
+  var cellRects = sheet ? sheet.querySelectorAll('rect.chart-cell') : [];
+  var syms = sheet ? sheet.querySelectorAll('text.chart-symbol') : [];
+  var thin = sheet ? sheet.querySelectorAll('line.cg-thin') : [];
+  var g5 = sheet ? sheet.querySelectorAll('line.cg-5') : [];
+  var g10 = sheet ? sheet.querySelectorAll('line.cg-10') : [];
+
+  detail.floatViolations = vr.floatViolations.length;
+  detail.cellCount = vr.cellCount;
+  detail.colorCells = cellRects.length;
+  detail.symbols = syms.length;
+  detail.thin = thin.length;
+  detail.g5 = g5.length;
+  detail.g10 = g10.length;
+  detail.colorMode = wantColor;
+  detail.initErr = window.__initErr;
+
+  // 使用色hexが実際にセル塗りとして出ているか（凡例だけでなくグリッド内に）
+  var hexes = {};
+  for (var i = 0; i < cellRects.length; i++) hexes[cellRects[i].getAttribute('fill')] = 1;
+  detail.cellFillHexes = Object.keys(hexes).sort();
+
+  function sw(nl) { return nl.length ? parseFloat(nl[0].getAttribute('stroke-width')) : null; }
+  detail.strokeThin = sw(thin); detail.stroke5 = sw(g5); detail.stroke10 = sw(g10);
+
+  checks.noInitErr = !window.__initErr;
+  checks.noFloatViolation = vr.floatViolations.length === 0;
+  checks.sheetExists = !!sheet;
+  checks.symbolsExist = syms.length === vr.cellCount;
+  checks.gridTiers = thin.length > 0 && g5.length > 0 && g10.length > 0;
+  checks.tierWidthsAscend = detail.strokeThin < detail.stroke5 && detail.stroke5 < detail.stroke10;
+  if (wantColor) {
+    checks.colorCellsExist = cellRects.length === vr.cellCount;
+    checks.allSixColorsOnPaper = detail.cellFillHexes.length === 6;
+  } else {
+    checks.monoHasNoColorCells = cellRects.length === 0;
+  }
+
+  var ok = true; for (var kk in checks) if (!checks[kk]) ok = false;
+  document.getElementById('trace-harness-result').textContent =
+    'RESULT:' + JSON.stringify({ ok: ok, checks: checks, detail: detail });
+})();
+</script>
+</body>
